@@ -1,0 +1,11 @@
+celery==5.4.0
+redis==5.0.4
+pandas==2.2.2
+scikit-learn==1.4.2
+ortools==9.9.3963
+qiskit==1.1.0
+qiskit-optimization==0.6.1
+qiskit-aer==0.14.1
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+pydantic-settings==2.3.1
