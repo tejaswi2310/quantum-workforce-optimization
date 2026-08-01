@@ -14,7 +14,7 @@ try:
     from qiskit_optimization.algorithms import MinimumEigenOptimizer
     from qiskit_algorithms import QAOA
     from qiskit_algorithms.optimizers import COBYLA
-    from qiskit.primitives import Sampler
+    from qiskit.primitives import StatevectorSampler
     QISKIT_AVAILABLE = True
 except Exception as e:
     print(f"Warning: Qiskit components could not be fully imported: {e}")
@@ -105,7 +105,7 @@ def run_quantum_optimization():
                     
             qp.minimize(linear=linear, quadratic=quadratic)
             
-            sampler = Sampler()
+            sampler = StatevectorSampler()
             qaoa = QAOA(sampler=sampler, optimizer=COBYLA(), reps=1)
             optimizer = MinimumEigenOptimizer(qaoa)
             
