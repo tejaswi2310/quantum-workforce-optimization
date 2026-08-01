@@ -283,7 +283,7 @@ with tabs[0]:
             "Normal Day": list(base_kpis.values()),
             f"Scenario ({selected_scenario})": list(kpi_data.values())
         })
-        st.dataframe(comp_df, use_container_width=True)
+        st.dataframe(comp_df, width="stretch")
     
     st.write("---")
     # Existing Hourly Analytics
