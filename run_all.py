@@ -1,3 +1,8 @@
+"""
+Master orchestration script for the Quantum Workforce Optimizer pipeline.
+This script runs data generation, AI demand forecasting, classical optimization,
+shift mapping, quantum simulation, and queue validation sequentially.
+"""
 import os
 import sys
 
@@ -17,19 +22,19 @@ def main():
     
     # 2. Demand Forecasting
     print("\n--- STEP 2: Running AI Demand Forecasting ---")
-    from src.forecasting import train_forecast
+    from src.demand_forecaster import train_forecast
     train_forecast()
     print("AI demand forecasting completed successfully.")
     
     # 3. Classical Optimization
     print("\n--- STEP 3: Running Classical Optimization ---")
-    from src.optimizer import run_classical_optimization
+    from src.classical_optimizer import run_classical_optimization
     run_classical_optimization()
     print("Classical optimization completed successfully.")
     
     # 4. Shift Optimization
     print("\n--- STEP 4: Running Shift Optimization ---")
-    from src.optimizer_shifts import run_shift_optimization
+    from src.shift_optimizer import run_shift_optimization
     run_shift_optimization()
     print("Shift optimization completed successfully.")
     
@@ -41,7 +46,7 @@ def main():
     
     # 6. Queue Validation
     print("\n--- STEP 6: Running Queue Simulation (Erlang C) ---")
-    from src.queue_simulation import run_queue_simulation
+    from src.queue_simulator import run_queue_simulation
     run_queue_simulation()
     print("Queue validation completed successfully.")
     

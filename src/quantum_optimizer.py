@@ -1,3 +1,8 @@
+"""
+Module for executing quantum optimization.
+Builds a dynamically generated QUBO matrix for a Reduced Workforce Optimization Problem
+based on actual demand, and compares classical exact results against Qiskit QAOA simulation.
+"""
 import os
 import numpy as np
 import pandas as pd
@@ -15,14 +20,14 @@ except Exception as e:
     print(f"Warning: Qiskit components could not be fully imported: {e}")
     print("Fallback to simulated QAOA solver will be used.")
 
-def solve_qubo_classical(Q):
-    # Brute force search for 8 binary variables (2^8 = 256 combinations)
+def solve_qubo_classical(Q, N):
+    """Exact classical solver using brute force over 2^N combinations."""
     best_val = float('inf')
     best_config = None
     
-    for i in range(256):
-        # Convert to binary array of length 8
-        config = np.array([int(x) for x in f"{i:08b}"])
+    for i in range(2**N):
+        # Convert integer to binary array of length N
+        config = np.array([int(x) for x in f"{i:0{N}b}"])
         # Evaluate x^T * Q * x
         val = config.dot(Q).dot(config)
         if val < best_val:
@@ -32,28 +37,53 @@ def solve_qubo_classical(Q):
     return best_config, best_val
 
 def run_quantum_optimization():
-    print("Building 8x8 QUBO Matrix for scheduling 3 shifts...")
-    # 8x8 QUBO matrix representing scheduling of 8 shifts
-    # Objective: Minimize cost sum(15 * x_i) subject to sum(x_i) == 3
-    # Penalty: P * (sum(x_i) - 3)^2
-    # For P = 30, Diagonal elements = 15 - 5*P = -135. Off-diagonal elements = P = 30 (since x_i*x_j occurs twice, i.e., 2*P*x_i*x_j)
+    # Load Classical Results for Dynamic QUBO Generation
+    classical_path = os.path.join("results", "classical_optimization_schedule.csv")
+    if not os.path.exists(classical_path):
+        raise FileNotFoundError(f"Classical schedule not found at {classical_path}. Run classical_optimizer.py first.")
+        
+    df_classical = pd.read_csv(classical_path)
     
-    Q = np.zeros((8, 8))
-    for i in range(8):
-        Q[i, i] = -135
-        for j in range(8):
+    # 1. Identify Reduced Problem Window (Peak 4-hours)
+    # We use a moving sum to find the busiest 4-hour consecutive block
+    df_classical['rolling_demand'] = df_classical['required_agents'].rolling(window=4, min_periods=1).sum()
+    peak_end_hour = df_classical['rolling_demand'].idxmax()
+    peak_start_hour = max(0, peak_end_hour - 3)
+    
+    peak_df = df_classical.iloc[peak_start_hour:peak_end_hour+1]
+    d_target = int(peak_df['required_agents'].max())
+    
+    print(f"--- REDUCED QUANTUM PROBLEM ---")
+    print(f"Peak Window: {peak_start_hour:02d}:00 to {peak_end_hour:02d}:00")
+    print(f"Target Agents Required (d): {d_target}")
+    
+    # 2. Build QUBO Matrix
+    # We allocate N available candidate shifts to cover this peak
+    N = 8 
+    # Ensure target doesn't exceed N for this reduced problem
+    d = min(d_target, N)
+    
+    wage = 15
+    penalty = 30
+    
+    # H = sum(wage * q_i) + penalty * (sum(q_i) - d)^2
+    # Q_ii = wage + penalty - 2 * penalty * d
+    # Q_ij = penalty
+    
+    Q = np.zeros((N, N))
+    for i in range(N):
+        Q[i, i] = wage + penalty - 2 * penalty * d
+        for j in range(N):
             if i != j:
-                Q[i, j] = 30
+                Q[i, j] = penalty
                 
-    print("QUBO Matrix Q:")
+    print(f"Generated {N}x{N} QUBO Matrix Q:")
     print(Q)
     
     # Solve Classically (Exact)
-    classical_config, classical_val = solve_qubo_classical(Q)
-    # Calculate actual cost (excluding penalty)
-    # Each scheduled agent costs $15. Cost = sum(x_i) * 15
+    classical_config, classical_val = solve_qubo_classical(Q, N)
     classical_agents = sum(classical_config)
-    classical_cost = classical_agents * 15
+    classical_cost = classical_agents * wage
     
     # Solve with Qiskit or fallback
     quantum_config = None
@@ -62,30 +92,27 @@ def run_quantum_optimization():
     
     if QISKIT_AVAILABLE:
         try:
-            # Construct QuadraticProgram
             qp = QuadraticProgram()
-            for i in range(8):
+            for i in range(N):
                 qp.binary_var(name=f'x_{i}')
                 
-            # Set objective: minimize x^T * Q * x
             linear = {}
             quadratic = {}
-            for i in range(8):
+            for i in range(N):
                 linear[f'x_{i}'] = Q[i, i]
-                for j in range(i+1, 8):
+                for j in range(i+1, N):
                     quadratic[(f'x_{i}', f'x_{j}')] = Q[i, j] + Q[j, i]
                     
             qp.minimize(linear=linear, quadratic=quadratic)
             
-            # QAOA Solver
             sampler = Sampler()
             qaoa = QAOA(sampler=sampler, optimizer=COBYLA(), reps=1)
             optimizer = MinimumEigenOptimizer(qaoa)
             
             result = optimizer.solve(qp)
-            quantum_config = np.array([int(result.x[i]) for i in range(8)])
+            quantum_config = np.array([int(result.x[i]) for i in range(N)])
             quantum_agents = sum(quantum_config)
-            quantum_cost = quantum_agents * 15
+            quantum_cost = quantum_agents * wage
             print("Successfully solved using Qiskit QAOA!")
         except Exception as ex:
             print(f"Error solving with Qiskit QAOA: {ex}")
@@ -108,6 +135,7 @@ def run_quantum_optimization():
     match_pct = "100%" if match_status == "YES" else "0%"
     
     comparison_data = [
+        {"Metric": "Target Agents (d)", "Classical_Exact": str(d), "Quantum_QAOA": str(d), "Match": "N/A"},
         {"Metric": "Classical Cost", "Classical_Exact": f"${classical_cost:.2f}", "Quantum_QAOA": f"${quantum_cost:.2f}", "Match": match_status},
         {"Metric": "Quantum Cost", "Classical_Exact": f"${classical_cost:.2f}", "Quantum_QAOA": f"${quantum_cost:.2f}", "Match": match_status},
         {"Metric": "Agents Scheduled", "Classical_Exact": str(classical_agents), "Quantum_QAOA": str(quantum_agents), "Match": match_status},

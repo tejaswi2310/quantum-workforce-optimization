@@ -1,3 +1,7 @@
+"""
+Module for executing classical optimization.
+Uses Google OR-Tools SCIP solver to determine the required number of agents per hour.
+"""
 import os
 import pandas as pd
 import numpy as np

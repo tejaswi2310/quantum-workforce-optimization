@@ -1,3 +1,7 @@
+"""
+Module for executing Erlang C queue simulation.
+Validates that the optimized schedule meets the required Service Level Agreement (SLA).
+"""
 import os
 import math
 import pandas as pd

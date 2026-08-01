@@ -1,3 +1,7 @@
+"""
+Module for executing shift optimization.
+Maps hourly agent requirements to real-world 8-hour shifts with mandatory breaks.
+"""
 import os
 import pandas as pd
 import numpy as np

@@ -1,3 +1,7 @@
+"""
+Streamlit dashboard application.
+Provides interactive visualization for analytics, forecasting, optimization results, and business ROI.
+"""
 import os
 import streamlit as st
 import pandas as pd

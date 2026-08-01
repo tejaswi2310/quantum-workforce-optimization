@@ -1,5 +1,6 @@
 Metric,Classical_Exact,Quantum_QAOA,Match
-Classical Cost,$45.00,$45.00,YES
-Quantum Cost,$45.00,$45.00,YES
-Agents Scheduled,3,3,YES
-Optimal Config,"[np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1)]","[np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1)]",100%
+Target Agents (d),5,5,N/A
+Classical Cost,$75.00,$75.00,YES
+Quantum Cost,$75.00,$75.00,YES
+Agents Scheduled,5,5,YES
+Optimal Config,"[np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1), np.int64(1), np.int64(1)]","[np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1), np.int64(1), np.int64(1)]",100%

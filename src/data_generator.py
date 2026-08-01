@@ -1,3 +1,7 @@
+"""
+Module for generating synthetic historical call center data.
+Simulates call volume patterns, handle times, and historical SLAs across channels and skills.
+"""
 import os
 import pandas as pd
 import numpy as np

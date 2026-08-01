@@ -1,3 +1,7 @@
+"""
+Module for training the AI demand forecasting model.
+Uses a RandomForestRegressor to predict hourly call volumes based on historical data.
+"""
 import os
 import pickle
 import numpy as np
