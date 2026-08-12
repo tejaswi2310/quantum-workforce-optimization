@@ -5,7 +5,7 @@
 🏆 **WISER Quantum + AI Optimization Program 2026 — Vanguard Challenge Submission**
 End-to-end decision-support system combining AI demand forecasting, classical optimization (OR-Tools), quantum exploration (QAOA), and Erlang-C queue simulation for intelligent workforce planning.
 
-📊 [Live Dashboard](https://quantum-workforce-optimization-kn96seuxrjgpjykibquvfu.streamlit.app/) • 📐 [Mathematical Formulation](docs/Mathematical_Formulation.md) • 📄 [Research Report](docs/Research_Report.md) • 🎥 [Video Walkthrough](docs/demo_video.mp4)
+📊 [Live Dashboard](https://quantum-workforce-optimization-kn96seuxrjgpjykibquvfu.streamlit.app/) • 📐 [Mathematical Formulation](docs/Mathematical_Formulation.md) • 📄 [Research Report](docs/Research_Report.md) • 🎥 [Video Walkthrough](https://www.youtube.com/watch?v=-0agydv11jQ&vq=hd1080)
 
 🔗 **Repository:** [github.com/tejaswi2310/quantum-workforce-optimization](https://github.com/tejaswi2310/quantum-workforce-optimization)
 
