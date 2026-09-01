@@ -82,26 +82,40 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             val = df_day[(df_day['skill_group'] == k) & (df_day['hour'] == t)]['required_agents'].sum()
             demand[(k, t)] = int(val)
             
-    # 2. Setup Agents and Skills
-    # To satisfy demand (~753 total agent-hours), we generate 120 agents with random skills
-    np.random.seed(42)
-    num_agents = 120
+    # 2. Setup Agents and Skills from Roster
+    roster_path = storage.data_path("raw/synthetic_roster.csv")
+    if not os.path.exists(roster_path):
+        global_roster_path = os.path.join("data", "raw", "synthetic_roster.csv")
+        if os.path.exists(global_roster_path):
+            roster_path = global_roster_path
+        else:
+            raise FileNotFoundError(f"Roster not found at {roster_path}. Please run data_generator.py first.")
+            
+    df_roster = pd.read_csv(roster_path)
+    if df_roster.empty:
+        raise ValueError(f"Roster at {roster_path} is empty.")
+        
     agents = []
-    
-    for i in range(num_agents):
-        # Assign 1 or 2 skills to each agent
-        num_skills = np.random.choice([1, 2], p=[0.7, 0.3])
-        agent_skills = np.random.choice(skills, size=num_skills, replace=False).tolist()
-        # Make sure every skill is represented
-        if i < len(skills):
-            agent_skills = [skills[i]]
+    for _, row in df_roster.iterrows():
+        agent_id = str(row['agent_id'])
+        if not agent_id:
+            raise ValueError("Found agent with empty ID.")
+        
+        agent_skills = str(row['skills']).split('|')
+        agent_wage = float(row['wage'])
+        if agent_wage <= 0:
+            raise ValueError(f"Invalid wage for agent {agent_id}: {agent_wage}")
             
         agents.append({
-            'id': i,
+            'id': agent_id,
             'skills': agent_skills,
-            'wage': 15,
-            'ot_penalty': 30
+            'wage': agent_wage
         })
+        
+    # Validation: Enforce unique IDs
+    agent_ids = [a['id'] for a in agents]
+    if len(agent_ids) != len(set(agent_ids)):
+        raise ValueError("Duplicate agent IDs found in the roster.")
         
     # 3. Define Shift Templates
     # Each template provides a 24-hour binary array for work (x)
@@ -112,8 +126,8 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     shift_templates.append({
         'name': 'None',
         'x': [0]*24,
-        'cost': 0,
-        'overtime': 0
+        'hours': 0,
+        'overtime_hours': 0
     })
     
     for start_h in range(24):
@@ -125,8 +139,8 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         shift_templates.append({
             'name': f'Base_Start_{start_h:02d}',
             'x': x_base,
-            'cost': 8 * 15,
-            'overtime': 0
+            'hours': 8,
+            'overtime_hours': 0
         })
         
         # OT shift (+1 hr)
@@ -137,53 +151,38 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         shift_templates.append({
             'name': f'OT1_Start_{start_h:02d}',
             'x': x_ot1,
-            'cost': 8 * 15 + 1 * 30,
-            'overtime': 1
+            'hours': 8,
+            'overtime_hours': 1
         })
 
     # 4. Initialize CP-SAT Model
     model = cp_model.CpModel()
     
-    # Group agents by skill profile
-    profiles = {}
+    # x[i, s] = 1 if agent i takes shift template s
+    x = {}
     for i, agent in enumerate(agents):
-        prof_key = tuple(sorted(agent['skills']))
-        if prof_key not in profiles:
-            profiles[prof_key] = []
-        profiles[prof_key].append(agent['id'])
-        
-    # count[p, s] = number of agents with profile p taking shift template s
-    count_vars = {}
-    for p_key, agent_ids in profiles.items():
         for s in range(len(shift_templates)):
-            # Cannot assign more agents than exist in this profile
-            count_vars[(p_key, s)] = model.NewIntVar(0, len(agent_ids), f'count_{p_key}_{s}')
+            x[(i, s)] = model.NewBoolVar(f'x_{i}_{s}')
             
-    # Total agents assigned to any shift for a profile must not exceed available agents in that profile
-    for p_key, agent_ids in profiles.items():
-        model.Add(sum(count_vars[(p_key, s)] for s in range(len(shift_templates))) <= len(agent_ids))
+        # Agent can only take exactly one shift
+        model.AddExactlyOne([x[(i, s)] for s in range(len(shift_templates))])
         
-    # available_at_hour[p_key, t] = sum(count[p_key, s] * x[s, t])
-    available_at_hour = {}
-    for p_key in profiles.keys():
-        for t in range(24):
-            expr = sum(count_vars[(p_key, s)] for s in range(len(shift_templates)) if shift_templates[s]['x'][t] == 1)
-            available_at_hour[(p_key, t)] = model.NewIntVar(0, len(profiles[p_key]), f'avail_{p_key}_{t}')
-            model.Add(available_at_hour[(p_key, t)] == expr)
-            
-    # assign_prof[p_key, k, t] = how many agents of profile p are working on skill k at hour t
-    assign_prof = {}
-    for p_key in profiles.keys():
+    # y[i, k, t] = 1 if agent i is working on skill k at hour t
+    y = {}
+    for i, agent in enumerate(agents):
         for t in range(24):
             for k in skills:
-                if k in p_key:
-                    assign_prof[(p_key, k, t)] = model.NewIntVar(0, len(profiles[p_key]), f'assign_{p_key}_{k}_{t}')
-                else:
-                    assign_prof[(p_key, k, t)] = 0
+                y[(i, k, t)] = model.NewBoolVar(f'y_{i}_{k}_{t}')
+                # If agent doesn't have the skill, they can't answer it
+                if k not in agent['skills']:
+                    model.Add(y[(i, k, t)] == 0)
                     
-            # Sum of assignments across skills must equal available agents for that profile
-            valid_skills = [k for k in skills if k in p_key]
-            model.Add(sum(assign_prof[(p_key, k, t)] for k in valid_skills) == available_at_hour[(p_key, t)])
+            # At any hour t, an agent can answer at most 1 skill
+            model.AddAtMostOne([y[(i, k, t)] for k in skills])
+            
+            # Agent can only answer a skill at hour t if they are working at hour t
+            is_working_at_t = sum(x[(i, s)] for s in range(len(shift_templates)) if shift_templates[s]['x'][t] == 1)
+            model.Add(sum(y[(i, k, t)] for k in skills) == is_working_at_t)
 
     # Shortfall and idle variables
     shortfall = {}
@@ -193,7 +192,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             shortfall[(k, t)] = model.NewIntVar(0, 1000, f'shortfall_{k}_{t}')
             idle[(k, t)] = model.NewIntVar(0, 1000, f'idle_{k}_{t}')
             
-            assigned_total = sum(assign_prof[(p_key, k, t)] for p_key in profiles.keys() if k in p_key)
+            assigned_total = sum(y[(i, k, t)] for i in range(len(agents)))
             
             diff = model.NewIntVar(-1000, 1000, f'diff_{k}_{t}')
             model.Add(diff == assigned_total - demand[(k, t)])
@@ -204,18 +203,29 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             model.AddMaxEquality(shortfall[(k, t)], [0, neg_diff])
             
     # 5. Objective Function
-    w_cost = 1.0
-    w_shortfall = 200.0  # Must strictly exceed shift cost (120) to prevent understaffing
-    w_idle = 5.0        # Minor penalty for overstaffing
+    # We want to minimize cost but severely penalize shortfall
+    w_cost = 1
+    w_shortfall = 20000  # Must strictly exceed maximum shift cost to prevent understaffing
+    w_idle = 5
     
-    total_cost = sum(count_vars[(p_key, s)] * shift_templates[s]['cost'] for p_key in profiles.keys() for s in range(len(shift_templates)))
+    total_cost_expr = []
+    for i, agent in enumerate(agents):
+        wage = agent['wage']
+        ot_rate = wage * 1.5
+        for s in range(len(shift_templates)):
+            shift = shift_templates[s]
+            cost = int(round(wage * shift['hours'] + ot_rate * shift['overtime_hours']))
+            if cost > 0:
+                total_cost_expr.append(x[(i, s)] * cost)
+                
+    total_cost = sum(total_cost_expr)
     total_shortfall = sum(shortfall[(k, t)] for k in skills for t in range(24))
     total_idle = sum(idle[(k, t)] for k in skills for t in range(24))
     
     model.Minimize(
-        int(w_cost) * total_cost + 
-        int(w_shortfall) * total_shortfall + 
-        int(w_idle) * total_idle
+        w_cost * total_cost + 
+        w_shortfall * total_shortfall + 
+        w_idle * total_idle
     )
     
     # 6. Solve
@@ -234,7 +244,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             total_sched = 0
             for k in skills:
                 req = demand[(k, t)]
-                sched = sum(solver.Value(assign_prof[(p_key, k, t)]) for p_key in profiles.keys() if k in p_key)
+                sched = sum(solver.Value(y[(i, k, t)]) for i in range(len(agents)))
                 total_req += req
                 total_sched += sched
                 
@@ -248,26 +258,26 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             
         # Post-process to assign specific agent IDs
         agent_shifts = []
-        total_cost_calc = 0
+        total_cost_calc = 0.0
         
-        for p_key, agent_ids in profiles.items():
-            assigned_idx = 0
+        for i, agent in enumerate(agents):
             for s in range(len(shift_templates)):
-                num_on_shift = solver.Value(count_vars[(p_key, s)])
-                template = shift_templates[s]
-                
-                for _ in range(num_on_shift):
+                if solver.Value(x[(i, s)]) == 1:
+                    template = shift_templates[s]
                     if template['name'] != 'None':
-                        agent_id = agent_ids[assigned_idx]
-                        total_cost_calc += template['cost']
+                        wage = agent['wage']
+                        ot_rate = wage * 1.5
+                        shift_cost = round(wage * template['hours'] + ot_rate * template['overtime_hours'], 2)
+                        total_cost_calc += shift_cost
+                        
                         agent_shifts.append({
-                            'agent_id': agent_id,
-                            'skills': '|'.join(p_key),
+                            'agent_id': agent['id'],
+                            'skills': '|'.join(agent['skills']),
                             'shift_name': template['name'],
-                            'cost': template['cost'],
-                            'overtime': template['overtime']
+                            'cost': shift_cost,
+                            'overtime': template['overtime_hours']
                         })
-                    assigned_idx += 1
+                    break
                     
         # Apply total cost to all rows for reference (optional, better to put in shifts summary)
         for r in results:
@@ -279,8 +289,29 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         df_shifts = pd.DataFrame(agent_shifts)
         df_shifts.to_csv(storage.result_path("agent_shifts_detailed.csv"), index=False)
         
+        # Save metrics for API response
+        total_shortfall_val = sum(solver.Value(shortfall[(k, t)]) for k in skills for t in range(24))
+        optimization_status = "OPTIMAL_WITH_SHORTFALL" if total_shortfall_val > 0 else "OPTIMAL"
+        if status == cp_model.FEASIBLE:
+            optimization_status = "FEASIBLE_WITH_SHORTFALL" if total_shortfall_val > 0 else "FEASIBLE"
+            
+        metrics = {
+            "optimization_status": optimization_status,
+            "staffing_shortfall": int(total_shortfall_val),
+            "total_cost": round(total_cost_calc, 2)
+        }
+        with open(storage.result_path("optimization_metrics.json"), "w") as f:
+            json.dump(metrics, f)
+            
     else:
         print("Solver failed to find a feasible solution.")
+        metrics = {
+            "optimization_status": "INFEASIBLE",
+            "staffing_shortfall": -1,
+            "total_cost": 0.0
+        }
+        with open(storage.result_path("optimization_metrics.json"), "w") as f:
+            json.dump(metrics, f)
         
 if __name__ == "__main__":
     run_classical_optimization()

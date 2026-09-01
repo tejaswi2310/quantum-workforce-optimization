@@ -88,6 +88,35 @@ def execute_optimization_pipeline(run_id: uuid.UUID):
         return
 
     # 6. COMPLETED
+    db = SessionLocal()
+    try:
+        run = db.query(OptimizationRun).filter(OptimizationRun.id == run_id).first()
+        if run:
+            import json
+            import os
+            storage = StorageService(run_id)
+            metrics_path = storage.result_path("optimization_metrics.json")
+            if os.path.exists(metrics_path):
+                with open(metrics_path, "r") as f:
+                    metrics = json.load(f)
+                    
+                # Store metrics in results json column
+                current_results = run.results or {}
+                current_results.update(metrics)
+                run.results = current_results
+                
+                # If the optimizer explicitly failed or had shortfall, we can optionally 
+                # keep track of the specific optimizer status in the DB
+                if "optimization_status" in metrics:
+                    # Let the overall run status be COMPLETED, but we could also bubble it up
+                    pass
+                    
+            db.commit()
+    except Exception as e:
+        print(f"Failed to update results for {run_id}: {e}")
+    finally:
+        db.close()
+        
     update_run_status(run_id, "COMPLETED")
 
 

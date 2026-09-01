@@ -117,5 +117,40 @@ def generate_data(run_id: uuid.UUID = None):
     print(f"Columns: {list(df.columns)}")
     print(f"Saved to {data_path}")
 
+    # Generate synthetic roster (deterministic)
+    roster = []
+    # Seed strictly for roster generation
+    np.random.seed(12345)
+    
+    for i in range(1, 121):  # 120 agents
+        num_skills = np.random.choice([1, 2, 3], p=[0.6, 0.3, 0.1])
+        agent_skills = np.random.choice(skills, size=num_skills, replace=False).tolist()
+        
+        # Ensure minimal coverage for all skills
+        if i <= len(skills):
+            agent_skills = [skills[i-1]]
+            
+        # Heterogeneous wage structure
+        base_wage = 15.0
+        if "Technical" in agent_skills:
+            base_wage += 5.0
+        if "Sales" in agent_skills:
+            base_wage += 2.0
+            
+        # Add random noise to wage to differentiate individuals
+        wage = base_wage + np.random.uniform(0.0, 5.0)
+        
+        roster.append({
+            "agent_id": f"AGT-{i:03d}",
+            "skills": "|".join(agent_skills),
+            "wage": round(wage, 2)
+        })
+        
+    df_roster = pd.DataFrame(roster)
+    roster_path = storage.data_path("raw/synthetic_roster.csv")
+    df_roster.to_csv(roster_path, index=False)
+    print(f"Generated roster with {len(df_roster)} agents.")
+    print(f"Saved to {roster_path}")
+
 if __name__ == "__main__":
     generate_data()
