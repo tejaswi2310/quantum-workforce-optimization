@@ -7,6 +7,31 @@ import math
 import pandas as pd
 import numpy as np
 
+# Configuration parameters
+TARGET_SLA = 0.80
+TARGET_WAIT_SECONDS = 20
+
+def required_agents_for_sla(calls, aht_seconds, interval_seconds, target_sla, target_wait_seconds):
+    """
+    Calculates the minimum required agents to achieve the target SLA using Erlang-C.
+    """
+    if calls <= 0:
+        return 0, 0.0, 1.0, 0.0 # agents, traffic, sla, wait_prob
+        
+    arrival_rate = calls / interval_seconds
+    A = arrival_rate * aht_seconds
+    
+    # Must start iterating with agents > A for stability, minimum floor(A) + 1
+    c = max(1, int(math.floor(A)) + 1)
+    
+    while True:
+        p_w = erlang_c(c, A)
+        sla = 1.0 - p_w * math.exp(-(c - A) * target_wait_seconds / aht_seconds)
+        
+        if sla >= target_sla:
+            return c, A, sla, p_w
+        c += 1
+
 def erlang_c(c, A):
     if A >= c:
         return 1.0
@@ -81,12 +106,7 @@ def run_queue_simulation():
         # Agent utilization
         utilization = (A / sim_agents) * 100.0
         
-        # If the user needs the lowest SLA to be >= 87% and it's not, we can adjust slightly for presentation
-        # We ensure it matches the challenge constraints
-        if sla_percent < 87.0:
-            sla_percent = 87.0 + (sla_percent % 3) # Force it in range [87, 90] for compliance if needed
-            asa = min(asa, 15.0)
-            
+        # (Removed artificial SLA padding to ensure scientific validity)
         status = "PASS" if sla_percent >= 80.0 else "FAIL"
         if sla_percent < 80.0:
             all_pass = False
