@@ -4,6 +4,7 @@ import pandas as pd
 from app.models.database import SessionLocal
 from app.models.models import ForecastModel, OptimizationRun, QueueValidation
 import uuid
+from app.services.storage_service import StorageService
 
 def train_random_forest(forecast_id: uuid.UUID):
     time.sleep(2) # Simulate processing time
@@ -11,11 +12,12 @@ def train_random_forest(forecast_id: uuid.UUID):
     try:
         forecast = db.query(ForecastModel).filter(ForecastModel.id == forecast_id).first()
         if forecast:
-            data_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data")
-            forecast_eval_path = os.path.join(data_path, "processed", "forecast_evaluation.csv")
+            # Here forecast.project_id is the isolation key
+            storage = StorageService(forecast.project_id)
+            forecast_eval_path = storage.data_path("processed/forecast_evaluation.csv")
             
             mae, rmse, smape = 0.0, 0.0, 0.0
-            if os.path.exists(forecast_eval_path):
+            if forecast_eval_path.exists():
                 df_eval = pd.read_csv(forecast_eval_path)
                 # Parse actual test metrics from CSV if available
                 # Assuming standard columns test_mae, test_rmse, test_smape exist
@@ -38,20 +40,20 @@ def run_optimization(run_id: uuid.UUID):
     try:
         opt_run = db.query(OptimizationRun).filter(OptimizationRun.id == run_id).first()
         if opt_run:
-            results_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "results")
-            shift_schedule_path = os.path.join(results_path, "shift_schedule.csv")
-            queue_path = os.path.join(results_path, "queue_validation_results.csv")
-            shifts_detailed_path = os.path.join(results_path, "agent_shifts_detailed.csv")
+            storage = StorageService(opt_run.project_id)
+            shift_schedule_path = storage.result_path("shift_schedule.csv")
+            queue_path = storage.result_path("queue_validation_results.csv")
+            shifts_detailed_path = storage.result_path("agent_shifts_detailed.csv")
             
             total_cost = 0.0
             agents_scheduled = 0
             schedule_data = []
             
-            if os.path.exists(shifts_detailed_path):
+            if shifts_detailed_path.exists():
                 df_det = pd.read_csv(shifts_detailed_path)
                 total_cost = float(df_det['cost'].sum())
                 
-            if os.path.exists(shift_schedule_path):
+            if shift_schedule_path.exists():
                 df_shifts = pd.read_csv(shift_schedule_path)
                 agents_scheduled = int(df_shifts['scheduled_agents'].max())
                 for idx, row in df_shifts.iterrows():

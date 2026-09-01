@@ -8,6 +8,15 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+import os
+import sys
+
+# Append backend to path so we can import StorageService
+backend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend")
+if backend_path not in sys.path:
+    sys.path.append(backend_path)
+    
+from app.services.storage_service import StorageService
 
 
 # Setup page config
@@ -69,12 +78,35 @@ st.markdown("""
 
 # Use pathlib.Path for absolute paths relative to root directory
 ROOT_DIR = Path(__file__).resolve().parent.parent
-RAW_DATA_PATH = ROOT_DIR / "data" / "raw" / "synthetic_call_center.csv"
-FORECAST_PATH = ROOT_DIR / "data" / "processed" / "forecast_results.csv"
-CLASSICAL_PATH = ROOT_DIR / "results" / "classical_optimization_schedule.csv"
-SHIFT_PATH = ROOT_DIR / "results" / "shift_schedule.csv"
-QUANTUM_PATH = ROOT_DIR / "results" / "quantum_classical_comparison.csv"
-VALIDATION_PATH = ROOT_DIR / "results" / "queue_validation_results.csv"
+
+# Automatically detect the most recent run ID in runtime/runs/
+runtime_runs_dir = ROOT_DIR / "runtime" / "runs"
+latest_run_id = None
+if runtime_runs_dir.exists():
+    runs = [d for d in runtime_runs_dir.iterdir() if d.is_dir()]
+    if runs:
+        # Sort by modification time
+        runs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        latest_run_id = runs[0].name
+
+if latest_run_id:
+    st.sidebar.success(f"Loaded Data for Run: {latest_run_id[:8]}...")
+    storage = StorageService(latest_run_id)
+    RAW_DATA_PATH = storage.data_path("raw/synthetic_call_center.csv")
+    FORECAST_PATH = storage.data_path("processed/forecast_results.csv")
+    CLASSICAL_PATH = storage.result_path("classical_optimization_schedule.csv")
+    SHIFT_PATH = storage.result_path("shift_schedule.csv")
+    QUANTUM_PATH = storage.result_path("quantum_classical_comparison.csv")
+    VALIDATION_PATH = storage.result_path("queue_validation_results.csv")
+else:
+    st.sidebar.warning("No runs found in runtime/runs/")
+    # Fallback paths (won't exist anymore but prevents crash)
+    RAW_DATA_PATH = ROOT_DIR / "data" / "raw" / "synthetic_call_center.csv"
+    FORECAST_PATH = ROOT_DIR / "data" / "processed" / "forecast_results.csv"
+    CLASSICAL_PATH = ROOT_DIR / "results" / "classical_optimization_schedule.csv"
+    SHIFT_PATH = ROOT_DIR / "results" / "shift_schedule.csv"
+    QUANTUM_PATH = ROOT_DIR / "results" / "quantum_classical_comparison.csv"
+    VALIDATION_PATH = ROOT_DIR / "results" / "queue_validation_results.csv"
 
 # Safe file loader helper
 def safe_load_csv(path):
@@ -166,10 +198,6 @@ def calculate_kpis(vol_mult, df_c, df_v):
         return {}
     
     import math
-    import sys
-    import os
-    if os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend") not in sys.path:
-        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
     from app.core_engine.queue.queue_simulator import erlang_c
     
     # Calculate costs (Schedule is fixed, demand scales)
@@ -554,10 +582,6 @@ with tabs[5]:
         
         if volume_multiplier != 1.0:
             import math
-            import sys
-            import os
-            if os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend") not in sys.path:
-                sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
             from app.core_engine.queue.queue_simulator import erlang_c
             def compute_sla(row):
                 c = int(row['agents'])

@@ -14,8 +14,7 @@ from app.config import settings
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/datasets", tags=["datasets"])
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+from app.services.storage_service import StorageService
 
 @router.post("/upload", response_model=DatasetResponse)
 async def upload_dataset(
@@ -32,7 +31,11 @@ async def upload_dataset(
         raise HTTPException(status_code=415, detail="Only CSV files are supported")
 
     safe_filename = f"{project_id}_{uuid.uuid4()}.csv"
-    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+    storage = StorageService(project_id)
+    storage.ensure_run_dirs()
+    
+    # We store uploads in the data/raw folder of the runtime storage
+    file_path = str(storage.data_path(f"raw/{safe_filename}"))
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 

@@ -6,6 +6,8 @@ based on ACTUAL demand, and compares classical exact results against Qiskit QAOA
 import os
 import numpy as np
 import pandas as pd
+import uuid
+from app.services.storage_service import StorageService
 
 QISKIT_AVAILABLE = False
 try:
@@ -34,11 +36,19 @@ def solve_qubo_classical(Q, N):
             
     return best_config, best_val
 
-def run_quantum_optimization():
+def run_quantum_optimization(run_id: uuid.UUID = None):
+    storage = StorageService(run_id)
+    storage.ensure_run_dirs()
+
     # Load actual forecast to define the reduced problem
-    forecast_path = os.path.join("data", "processed", "forecast_results.csv")
+    forecast_path = storage.data_path("processed/forecast_results.csv")
     if not os.path.exists(forecast_path):
-        raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
+        # Fallback to global data/processed for backward compatibility during tests if needed
+        global_path = os.path.join("data", "processed", "forecast_results.csv")
+        if os.path.exists(global_path):
+            forecast_path = global_path
+        else:
+            raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
         
     df_forecast = pd.read_csv(forecast_path)
     
@@ -150,9 +160,8 @@ def run_quantum_optimization():
     ]
     
     df_comparison = pd.DataFrame(comparison_data)
-    os.makedirs("results", exist_ok=True)
-    df_comparison.to_csv(os.path.join("results", "quantum_classical_comparison.csv"), index=False)
-    print("Quantum-Classical comparison saved to results/quantum_classical_comparison.csv")
+    df_comparison.to_csv(storage.result_path("quantum_classical_comparison.csv"), index=False)
+    print(f"Quantum-Classical comparison saved to {storage.result_path('quantum_classical_comparison.csv')}")
 
 if __name__ == "__main__":
     run_quantum_optimization()

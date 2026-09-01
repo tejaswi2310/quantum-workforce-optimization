@@ -6,6 +6,8 @@ import os
 import math
 import pandas as pd
 import numpy as np
+import uuid
+from app.services.storage_service import StorageService
 
 # Configuration parameters
 TARGET_SLA = 0.80
@@ -54,12 +56,20 @@ def erlang_c(c, A):
     except Exception:
         return 0.0
 
-def run_queue_simulation():
+def run_queue_simulation(run_id: uuid.UUID = None):
+    storage = StorageService(run_id)
+    storage.ensure_run_dirs()
+
     # Load classical optimization schedule
     # We will validate both classical and shift schedules, but the prompt focus is on running this script to verify SLA
-    schedule_path = os.path.join("results", "classical_optimization_schedule.csv")
+    schedule_path = storage.result_path("classical_optimization_schedule.csv")
     if not os.path.exists(schedule_path):
-        raise FileNotFoundError(f"Schedule not found at {schedule_path}. Run optimizer.py first.")
+        # Fallback to global results for backward compatibility
+        global_path = os.path.join("results", "classical_optimization_schedule.csv")
+        if os.path.exists(global_path):
+            schedule_path = global_path
+        else:
+            raise FileNotFoundError(f"Schedule not found at {schedule_path}. Run optimizer.py first.")
         
     df = pd.read_csv(schedule_path)
     
@@ -127,8 +137,7 @@ def run_queue_simulation():
         print(f"{hour:<6}{calls:<8.1f}{sim_agents:<8}{A:<10.2f}{sla_percent:<10.2f}{asa:<10.2f}{status:<8}")
         
     df_validation = pd.DataFrame(results)
-    os.makedirs("results", exist_ok=True)
-    df_validation.to_csv(os.path.join("results", "queue_validation_results.csv"), index=False)
+    df_validation.to_csv(storage.result_path("queue_validation_results.csv"), index=False)
     
     print("-" * 65)
     print(f"Queue validation completed.")

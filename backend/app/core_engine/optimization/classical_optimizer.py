@@ -10,12 +10,22 @@ import numpy as np
 import math
 from ortools.sat.python import cp_model
 from app.core_engine.queue.queue_simulator import required_agents_for_sla, TARGET_SLA, TARGET_WAIT_SECONDS, erlang_c
+import uuid
+from app.services.storage_service import StorageService
 
-def run_classical_optimization():
+def run_classical_optimization(run_id: uuid.UUID = None):
     print("--- Running Classical Optimization (Full MIP) ---")
-    forecast_path = os.path.join("data", "processed", "forecast_results.csv")
+    storage = StorageService(run_id)
+    storage.ensure_run_dirs()
+
+    forecast_path = storage.data_path("processed/forecast_results.csv")
     if not os.path.exists(forecast_path):
-        raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
+        # Fallback to global data/processed for backward compatibility during tests if needed
+        global_path = os.path.join("data", "processed", "forecast_results.csv")
+        if os.path.exists(global_path):
+            forecast_path = global_path
+        else:
+            raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
         
     df_forecast = pd.read_csv(forecast_path)
     first_day = df_forecast['date'].min()
@@ -63,8 +73,7 @@ def run_classical_optimization():
         
     df_day['required_agents'] = required_agents
     
-    os.makedirs("results", exist_ok=True)
-    pd.DataFrame(validation_results).to_csv(os.path.join("results", "erlang_requirement_validation.csv"), index=False)
+    pd.DataFrame(validation_results).to_csv(storage.result_path("erlang_requirement_validation.csv"), index=False)
     
     demand = {}
     skills = df_day['skill_group'].unique()
@@ -265,11 +274,10 @@ def run_classical_optimization():
             r['cost'] = total_cost_calc
             
         df_results = pd.DataFrame(results)
-        os.makedirs("results", exist_ok=True)
-        df_results.to_csv(os.path.join("results", "classical_optimization_schedule.csv"), index=False)
-        print("Classical optimization completed and saved to results/classical_optimization_schedule.csv")
+        df_results.to_csv(storage.result_path("classical_optimization_schedule.csv"), index=False)
+        print(f"Classical optimization completed and saved to {storage.result_path('classical_optimization_schedule.csv')}")
         df_shifts = pd.DataFrame(agent_shifts)
-        df_shifts.to_csv(os.path.join("results", "agent_shifts_detailed.csv"), index=False)
+        df_shifts.to_csv(storage.result_path("agent_shifts_detailed.csv"), index=False)
         
     else:
         print("Solver failed to find a feasible solution.")

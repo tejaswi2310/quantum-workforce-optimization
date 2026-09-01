@@ -10,11 +10,7 @@ import uuid
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/dashboard", tags=["dashboard"])
 
-def get_results_dir():
-    return os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "results")
-
-def get_data_dir():
-    return os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data")
+from app.services.storage_service import StorageService
 
 @router.get("/metrics")
 def get_dashboard_metrics(
@@ -22,13 +18,11 @@ def get_dashboard_metrics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    results_path = get_results_dir()
-    data_path = get_data_dir()
-    
-    shift_schedule_path = os.path.join(results_path, "shift_schedule.csv")
-    queue_path = os.path.join(results_path, "queue_validation_results.csv")
-    shifts_detailed_path = os.path.join(results_path, "agent_shifts_detailed.csv")
-    forecast_results_path = os.path.join(data_path, "processed", "forecast_results.csv")
+    storage = StorageService(project_id)
+    shift_schedule_path = storage.result_path("shift_schedule.csv")
+    queue_path = storage.result_path("queue_validation_results.csv")
+    shifts_detailed_path = storage.result_path("agent_shifts_detailed.csv")
+    forecast_results_path = storage.data_path("processed/forecast_results.csv")
     
     avg_agents = 0
     avg_sla = 0.0
@@ -38,16 +32,16 @@ def get_dashboard_metrics(
     total_calls = 0
     total_agents = 0
     
-    if os.path.exists(shifts_detailed_path):
+    if shifts_detailed_path.exists():
         df_det = pd.read_csv(shifts_detailed_path)
         total_cost = float(df_det['cost'].sum())
         total_agents = len(df_det['agent_id'].unique())
         
-    if os.path.exists(shift_schedule_path):
+    if shift_schedule_path.exists():
         df_shifts = pd.read_csv(shift_schedule_path)
         avg_agents = int(df_shifts['scheduled_agents'].mean())
         
-    if os.path.exists(queue_path):
+    if queue_path.exists():
         df_queue = pd.read_csv(queue_path)
         avg_sla = float(df_queue['sla_percent'].mean())
         min_sla = float(df_queue['sla_percent'].min())
@@ -66,7 +60,7 @@ def get_dashboard_metrics(
             "total_cost": total_cost,
             "abandonment_rate": None, # Explicitly not modeled in infinite patience Erlang-C
             "avg_handle_time": 300,
-            "peak_hour": "12:00 PM" if os.path.exists(queue_path) else "N/A"
+            "peak_hour": "12:00 PM" if queue_path.exists() else "N/A"
         }
     }
 
@@ -76,12 +70,12 @@ def get_dashboard_analytics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    results_path = get_results_dir()
-    queue_path = os.path.join(results_path, "queue_validation_results.csv")
-    forecast_eval = os.path.join(get_data_dir(), "processed", "forecast_evaluation.csv")
+    storage = StorageService(project_id)
+    queue_path = storage.result_path("queue_validation_results.csv")
+    forecast_eval = storage.data_path("processed/forecast_evaluation.csv")
     
     calls_per_hour = []
-    if os.path.exists(queue_path):
+    if queue_path.exists():
         df_queue = pd.read_csv(queue_path)
         for _, row in df_queue.iterrows():
             calls_per_hour.append({
@@ -93,7 +87,7 @@ def get_dashboard_analytics(
             
     # Parse evaluation metrics if possible, else return None
     mae, rmse, smape = None, None, None
-    if os.path.exists(forecast_eval):
+    if forecast_eval.exists():
         # We can extract it from evaluation summary if we saved it there,
         # but realistically we parse the test metrics.
         # For simplicity, if we can't easily parse, we return null so frontend handles it.
@@ -127,10 +121,10 @@ def get_whatif_scenario(
     current_user: User = Depends(get_current_active_user)
 ):
     # TRUE WHAT-IF SENSITIVITY CALCULATION
-    results_path = get_results_dir()
-    queue_path = os.path.join(results_path, "queue_validation_results.csv")
+    storage = StorageService(project_id)
+    queue_path = storage.result_path("queue_validation_results.csv")
     
-    if not os.path.exists(queue_path):
+    if not queue_path.exists():
         raise HTTPException(status_code=404, detail="Queue validation results not found")
         
     df_queue = pd.read_csv(queue_path)
@@ -162,12 +156,12 @@ def get_optimization_results(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    results_path = get_results_dir()
-    shift_schedule_path = os.path.join(results_path, "shift_schedule.csv")
-    quantum_path = os.path.join(results_path, "quantum_classical_comparison.csv")
-    shifts_detailed_path = os.path.join(results_path, "agent_shifts_detailed.csv")
+    storage = StorageService(project_id)
+    shift_schedule_path = storage.result_path("shift_schedule.csv")
+    quantum_path = storage.result_path("quantum_classical_comparison.csv")
+    shifts_detailed_path = storage.result_path("agent_shifts_detailed.csv")
     
-    if not os.path.exists(shift_schedule_path):
+    if not shift_schedule_path.exists():
         raise HTTPException(status_code=404, detail="Optimization results not found")
         
     df_shifts = pd.read_csv(shift_schedule_path)
@@ -182,7 +176,7 @@ def get_optimization_results(
         })
         
     quantum_data = None
-    if os.path.exists(quantum_path):
+    if quantum_path.exists():
         # Parse simple quantum results (just as an example, realistically parse CSV)
         quantum_data = {
             "qubo_size": "8 Variables",
@@ -193,7 +187,7 @@ def get_optimization_results(
         }
         
     total_cost = 0.0
-    if os.path.exists(shifts_detailed_path):
+    if shifts_detailed_path.exists():
         total_cost = float(pd.read_csv(shifts_detailed_path)['cost'].sum())
         
     return {

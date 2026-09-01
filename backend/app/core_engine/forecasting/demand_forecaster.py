@@ -10,6 +10,8 @@ import pandas as pd
 from datetime import timedelta
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
+import uuid
+from app.services.storage_service import StorageService
 
 def smape(y_true, y_pred):
     """Calculates Symmetric Mean Absolute Percentage Error."""
@@ -27,11 +29,19 @@ def smape(y_true, y_pred):
     res[np.isnan(res)] = 0.0
     return np.mean(res) * 100.0
 
-def train_forecast():
+def train_forecast(run_id: uuid.UUID = None):
+    storage = StorageService(run_id)
+    storage.ensure_run_dirs()
+
     # 1. Load synthetic data
-    data_path = os.path.join("data", "raw", "synthetic_call_center.csv")
+    data_path = storage.data_path("raw/synthetic_call_center.csv")
     if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Synthetic data not found at {data_path}. Please run data_generator.py first.")
+        # Fallback to global data/raw for backward compatibility during tests if needed
+        global_path = os.path.join("data", "raw", "synthetic_call_center.csv")
+        if os.path.exists(global_path):
+            data_path = global_path
+        else:
+            raise FileNotFoundError(f"Synthetic data not found at {data_path}. Please run data_generator.py first.")
         
     df = pd.read_csv(data_path)
     
@@ -129,18 +139,17 @@ def train_forecast():
         df.loc[mask, 'baseline_calls'] = y_base.round(2)
 
     # 9. Save models and results
-    os.makedirs("models", exist_ok=True)
-    with open(os.path.join("models", "forecasting_model.pkl"), "wb") as f:
+    model_dir = storage.get_data_dir() / "models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    with open(model_dir / "forecasting_model.pkl", "wb") as f:
         pickle.dump(model, f)
-    with open(os.path.join("models", "feature_columns.pkl"), "wb") as f:
+    with open(model_dir / "feature_columns.pkl", "wb") as f:
         pickle.dump(features, f)
         
-    os.makedirs(os.path.join("data", "processed"), exist_ok=True)
-    
     # Save the evaluation results
     output_cols = ['date', 'hour', 'interval', 'channel', 'skill_group', 
                    'calls_received', 'predicted_calls', 'baseline_calls', 'split', 'model']
-    df[output_cols].to_csv(os.path.join("data", "processed", "forecast_evaluation.csv"), index=False)
+    df[output_cols].to_csv(storage.data_path("processed/forecast_evaluation.csv"), index=False)
     
     # 10. Generate 7-day future forecast (for optimizer)
     print("\nGenerating 7-day future forecast...")
@@ -206,8 +215,8 @@ def train_forecast():
     preds = model.predict(X_fc)
     df_forecast['predicted_calls'] = np.clip(preds, 0, None).round(2)
     
-    df_forecast.to_csv(os.path.join("data", "processed", "forecast_results.csv"), index=False)
-    print(f"Future forecast saved to data/processed/forecast_results.csv. Rows: {len(df_forecast)}")
+    df_forecast.to_csv(storage.data_path("processed/forecast_results.csv"), index=False)
+    print(f"Future forecast saved to {storage.data_path('processed/forecast_results.csv')}. Rows: {len(df_forecast)}")
 
 if __name__ == "__main__":
     train_forecast()

@@ -10,8 +10,7 @@ import uuid
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/reports", tags=["reports"])
 
-REPORT_DIR = "reports"
-os.makedirs(REPORT_DIR, exist_ok=True)
+from app.services.storage_service import StorageService
 
 @router.post("/generate", response_model=ReportResponse)
 def generate_report(
@@ -26,8 +25,8 @@ def generate_report(
 
     import pandas as pd
     
-    results_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "results")
-    shifts_detailed_path = os.path.join(results_path, "agent_shifts_detailed.csv")
+    storage = StorageService(project_id)
+    shifts_detailed_path = storage.result_path("agent_shifts_detailed.csv")
     
     opt_cost = 0.0
     if os.path.exists(shifts_detailed_path):
@@ -36,8 +35,8 @@ def generate_report(
         
     # Naive peak-staffing calculation: schedule peak demand agents for all 24 hours
     naive_cost = 0.0
-    shift_schedule_path = os.path.join(results_path, "shift_schedule.csv")
-    if os.path.exists(shift_schedule_path):
+    shift_schedule_path = storage.result_path("shift_schedule.csv")
+    if shift_schedule_path.exists():
         df_shifts = pd.read_csv(shift_schedule_path)
         peak_agents = int(df_shifts['required_agents'].max())
         naive_cost = peak_agents * 24 * 15.0 # Wage = $15/hr
@@ -45,7 +44,9 @@ def generate_report(
     daily_savings = max(0, naive_cost - opt_cost)
     annual_savings = daily_savings * 365
 
-    file_path = os.path.join(REPORT_DIR, f"{project_id}_report.txt")
+    reports_dir = storage.get_run_dir() / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    file_path = str(reports_dir / f"{project_id}_report.txt")
     with open(file_path, "w") as f:
         f.write("Business Impact Report\n")
         f.write("========================\n")

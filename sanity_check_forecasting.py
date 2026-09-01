@@ -6,8 +6,15 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from app.core_engine.forecasting.demand_forecaster import smape
 
 print("=== FORECASTING SANITY CHECK ===")
+from app.services.storage_service import StorageService
 
-eval_path = os.path.join("data", "processed", "forecast_evaluation.csv")
+run_id = StorageService.get_latest_run_id()
+if not run_id:
+    print("No runs found.")
+    sys.exit(1)
+storage = StorageService(run_id)
+
+eval_path = storage.data_path("processed/forecast_evaluation.csv")
 if not os.path.exists(eval_path):
     print(f"Error: {eval_path} not found.")
     exit(1)

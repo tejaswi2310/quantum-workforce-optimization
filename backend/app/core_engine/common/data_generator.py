@@ -6,8 +6,13 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import uuid
+from app.services.storage_service import StorageService
 
-def generate_data():
+def generate_data(run_id: uuid.UUID = None):
+    storage = StorageService(run_id)
+    storage.ensure_run_dirs()
+
     np.random.seed(42)
     start_date = datetime(2026, 1, 1)
     days = 180
@@ -105,12 +110,12 @@ def generate_data():
                     
     df = pd.DataFrame(records)
     
-    # Create directory if not exists
-    os.makedirs(os.path.join("data", "raw"), exist_ok=True)
-    df.to_csv(os.path.join("data", "raw", "synthetic_call_center.csv"), index=False)
+    data_path = storage.data_path("raw/synthetic_call_center.csv")
+    df.to_csv(data_path, index=False)
     
     print(f"Generated data shape: {df.shape}")
     print(f"Columns: {list(df.columns)}")
+    print(f"Saved to {data_path}")
 
 if __name__ == "__main__":
     generate_data()

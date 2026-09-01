@@ -5,13 +5,23 @@ verifying that shift assumptions, coverage, and costs are met without any hardco
 """
 import os
 import pandas as pd
+import uuid
+from app.services.storage_service import StorageService
 
-def run_shift_optimization():
-    shifts_path = os.path.join("results", "agent_shifts_detailed.csv")
-    classical_path = os.path.join("results", "classical_optimization_schedule.csv")
+def run_shift_optimization(run_id: uuid.UUID = None):
+    storage = StorageService(run_id)
+    storage.ensure_run_dirs()
+
+    shifts_path = storage.result_path("agent_shifts_detailed.csv")
+    classical_path = storage.result_path("classical_optimization_schedule.csv")
     
     if not os.path.exists(shifts_path) or not os.path.exists(classical_path):
-        raise FileNotFoundError(f"Optimization schedules not found. Run classical_optimizer.py first.")
+        # Fallback to global results for backward compatibility
+        if os.path.exists(os.path.join("results", "agent_shifts_detailed.csv")) and os.path.exists(os.path.join("results", "classical_optimization_schedule.csv")):
+            shifts_path = os.path.join("results", "agent_shifts_detailed.csv")
+            classical_path = os.path.join("results", "classical_optimization_schedule.csv")
+        else:
+            raise FileNotFoundError(f"Optimization schedules not found. Run classical_optimizer.py first.")
         
     df_shifts = pd.read_csv(shifts_path)
     df_hourly = pd.read_csv(classical_path)
@@ -94,14 +104,13 @@ def run_shift_optimization():
     print(f"24/24 Hour Coverage Verification: {'PASS' if coverage_pass else 'FAIL'}")
     
     df_out_shifts = pd.DataFrame(hourly_coverage)
-    os.makedirs("results", exist_ok=True)
-    df_out_shifts.to_csv(os.path.join("results", "shift_schedule.csv"), index=False)
+    df_out_shifts.to_csv(storage.result_path("shift_schedule.csv"), index=False)
     
     df_active = pd.DataFrame(active_shifts)
     if not df_active.empty:
-        df_active.to_csv(os.path.join("results", "active_shifts.csv"), index=False)
+        df_active.to_csv(storage.result_path("active_shifts.csv"), index=False)
     else:
-        pd.DataFrame({'shift_start_hour': [], 'agents': [], 'shift_type': []}).to_csv(os.path.join("results", "active_shifts.csv"), index=False)
+        pd.DataFrame({'shift_start_hour': [], 'agents': [], 'shift_type': []}).to_csv(storage.result_path("active_shifts.csv"), index=False)
 
 if __name__ == "__main__":
     run_shift_optimization()

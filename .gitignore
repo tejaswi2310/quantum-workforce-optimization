@@ -48,3 +48,4 @@ Thumbs.db
 backend/storage/
 reports/
 uploads/
+runtime/

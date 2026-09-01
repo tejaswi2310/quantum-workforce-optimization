@@ -1,8 +1,18 @@
 import pandas as pd
 import math
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
+from app.services.storage_service import StorageService
 
-df_c = pd.read_csv('results/classical_optimization_schedule.csv')
-df_v = pd.read_csv('results/queue_validation_results.csv')
+run_id = StorageService.get_latest_run_id()
+if not run_id:
+    print("No runs found.")
+    sys.exit(1)
+storage = StorageService(run_id)
+
+df_c = pd.read_csv(storage.result_path('classical_optimization_schedule.csv'))
+df_v = pd.read_csv(storage.result_path('queue_validation_results.csv'))
 
 scheduled = df_c['scheduled_agents'].sum()
 print("1. total scheduled agent-hours:", scheduled)

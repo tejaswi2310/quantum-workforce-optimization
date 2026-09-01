@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     CELERY_BROKER_URL: str = "sqla+sqlite:///./workforce.db"
     CELERY_RESULT_BACKEND: str = "db+sqlite:///./workforce.db"
+    RUNTIME_STORAGE_ROOT: str = "runtime/runs"
 
     class Config:
         env_file = ".env"

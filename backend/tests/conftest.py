@@ -8,6 +8,13 @@ from app.main import app
 from app.models.database import get_db, Base
 import uuid
 
+import shutil
+import os
+from app.config import settings
+
+# Override runtime storage root for tests
+settings.RUNTIME_STORAGE_ROOT = "runtime/test_runs"
+
 # In-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
@@ -34,6 +41,11 @@ def setup_test_db():
     yield
     # Drop the tables (not strictly necessary for in-memory, but good practice)
     Base.metadata.drop_all(bind=engine)
+    
+    # Clean up test runtime storage
+    test_runs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), settings.RUNTIME_STORAGE_ROOT)
+    if os.path.exists(test_runs_dir):
+        shutil.rmtree(test_runs_dir)
 
 @pytest.fixture(scope="module")
 def client():
