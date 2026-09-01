@@ -41,6 +41,9 @@ class StorageService:
     def get_results_dir(self) -> Path:
         return self.run_dir / "results"
         
+    def get_reports_dir(self) -> Path:
+        return self.run_dir / "reports"
+        
     def ensure_run_dirs(self):
         """Ensures existence of data/ and results/ folders for this run."""
         self.get_data_dir().mkdir(parents=True, exist_ok=True)
@@ -48,6 +51,7 @@ class StorageService:
         (self.get_data_dir() / "raw").mkdir(parents=True, exist_ok=True)
         (self.get_data_dir() / "processed").mkdir(parents=True, exist_ok=True)
         self.get_results_dir().mkdir(parents=True, exist_ok=True)
+        self.get_reports_dir().mkdir(parents=True, exist_ok=True)
         
     def _safe_path(self, base_dir: Path, filename: str) -> Path:
         """Safely joins a filename to a base directory, rejecting path traversal."""
@@ -72,3 +76,7 @@ class StorageService:
     def result_path(self, filename: str) -> Path:
         """Resolves to the run's results folder, enforcing path traversal prevention."""
         return self._safe_path(self.get_results_dir(), filename)
+        
+    def report_path(self, filename: str) -> Path:
+        """Resolves to the run's reports folder, enforcing path traversal prevention."""
+        return self._safe_path(self.get_reports_dir(), filename)

@@ -25,7 +25,12 @@ def generate_report(
 
     import pandas as pd
     
-    storage = StorageService(project_id)
+    from app.models.models import OptimizationRun
+    latest_run = db.query(OptimizationRun).filter(OptimizationRun.project_id == project_id).order_by(OptimizationRun.created_at.desc()).first()
+    if not latest_run:
+        raise HTTPException(status_code=404, detail="No optimization run found to generate a report from")
+
+    storage = StorageService(latest_run.id)
     shifts_detailed_path = storage.result_path("agent_shifts_detailed.csv")
     
     opt_cost = 0.0

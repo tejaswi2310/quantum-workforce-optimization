@@ -30,11 +30,23 @@ async def upload_dataset(
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=415, detail="Only CSV files are supported")
 
-    safe_filename = f"{project_id}_{uuid.uuid4()}.csv"
-    storage = StorageService(project_id)
+    # Create dataset record first to get a UUID
+    dataset = Dataset(
+        project_id=project.id,
+        filename=file.filename,
+        file_path="",  # will update after saving
+        row_count=0,
+        schema_definition={}
+    )
+    db.add(dataset)
+    db.commit()
+    db.refresh(dataset)
+
+    safe_filename = f"{dataset.id}_{uuid.uuid4()}.csv"
+    # Isolate dataset upload using its own UUID
+    storage = StorageService(dataset.id)
     storage.ensure_run_dirs()
     
-    # We store uploads in the data/raw folder of the runtime storage
     file_path = str(storage.data_path(f"raw/{safe_filename}"))
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -53,19 +65,19 @@ async def upload_dataset(
         schema_def = df.dtypes.astype(str).to_dict()
     except pd.errors.EmptyDataError:
         os.remove(file_path)
+        db.delete(dataset)
+        db.commit()
         raise HTTPException(status_code=400, detail="CSV file is empty")
     except Exception as e:
-        os.remove(file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        db.delete(dataset)
+        db.commit()
         raise HTTPException(status_code=400, detail=f"Error processing CSV: {str(e)}")
 
-    dataset = Dataset(
-        project_id=project.id,
-        filename=file.filename,
-        file_path=file_path,
-        row_count=row_count,
-        schema_definition=schema_def
-    )
-    db.add(dataset)
+    dataset.file_path = file_path
+    dataset.row_count = row_count
+    dataset.schema_definition = schema_def
     db.commit()
     db.refresh(dataset)
     return dataset

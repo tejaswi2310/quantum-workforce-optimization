@@ -70,10 +70,11 @@ class OptimizationRun(Base):
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"))
-    run_type = Column(String(50)) # 'classical', 'quantum', 'shift', 'hybrid'
+    run_type = Column(String(50)) # 'classical', 'quantum', 'shift', 'hybrid', 'full_pipeline'
     parameters = Column(JSON)
     results = Column(JSON)
-    status = Column(String(50), default="pending")
+    status = Column(String(50), default="CREATED")
+    error_message = Column(String, nullable=True)
     completed_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
 

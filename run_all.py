@@ -18,44 +18,27 @@ def main():
     run_id = uuid.uuid4()
     print(f"Run ID: {run_id}")
     
-    # 1. Data Generation
-    print("\n--- STEP 1: Running Data Generation ---")
-    from app.core_engine.common.data_generator import generate_data
-    generate_data(run_id)
-    print("Data generation completed successfully.")
+    from app.models.database import SessionLocal
+    from app.models.models import OptimizationRun
     
-    # 2. Demand Forecasting
-    print("\n--- STEP 2: Running AI Demand Forecasting ---")
-    from app.core_engine.forecasting.demand_forecaster import train_forecast
-    train_forecast(run_id)
-    print("AI demand forecasting completed successfully.")
-    
-    # 3. Classical Optimization
-    print("\n--- STEP 3: Running Classical Optimization ---")
-    from app.core_engine.optimization.classical_optimizer import run_classical_optimization
-    run_classical_optimization(run_id)
-    print("Classical optimization completed successfully.")
-    
-    # 4. Shift Optimization
-    print("\n--- STEP 4: Running Shift Optimization ---")
-    from app.core_engine.optimization.shift_optimizer import run_shift_optimization
-    run_shift_optimization(run_id)
-    print("Shift optimization completed successfully.")
-    
-    # 5. Quantum Optimization
-    print("\n--- STEP 5: Running Quantum Optimization ---")
-    from app.core_engine.quantum.quantum_optimizer import run_quantum_optimization
-    run_quantum_optimization(run_id)
-    print("Quantum optimization completed successfully.")
-    
-    # 6. Queue Validation
-    print("\n--- STEP 6: Running Queue Simulation (Erlang C) ---")
-    from app.core_engine.queue.queue_simulator import run_queue_simulation
-    run_queue_simulation(run_id)
-    print("Queue validation completed successfully.")
+    # Create the db record
+    db = SessionLocal()
+    try:
+        opt_run = OptimizationRun(id=run_id, run_type="full_pipeline", parameters={}, status="CREATED")
+        db.add(opt_run)
+        db.commit()
+    except Exception as e:
+        print(f"Database error: {e}")
+        return
+    finally:
+        db.close()
+
+    # Execute canonical pipeline
+    from app.services.orchestration_service import execute_optimization_pipeline
+    execute_optimization_pipeline(run_id)
     
     print("\n==================================================")
-    print("PIPELINE COMPLETED SUCCESSFULLY!")
+    print("PIPELINE COMPLETED!")
     print(f"All outputs generated in runtime/runs/{run_id}/ directories.")
     print("To launch the dashboard, run: streamlit run src/dashboard.py")
     print("==================================================")

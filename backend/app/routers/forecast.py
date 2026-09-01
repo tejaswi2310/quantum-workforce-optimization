@@ -19,14 +19,26 @@ def train_forecast(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Creating a ForecastModel just for legacy API compatibility, but we will actually
+    # spawn a full pipeline run to satisfy canonical run_id requirements.
     forecast = ForecastModel(project_id=project.id, status="training")
     db.add(forecast)
+    
+    from app.models.models import OptimizationRun
+    opt_run = OptimizationRun(
+        project_id=project.id,
+        run_type="full_pipeline",
+        parameters={},
+        status="CREATED"
+    )
+    db.add(opt_run)
     db.commit()
     db.refresh(forecast)
+    db.refresh(opt_run)
 
-    # Trigger Background task
-    from app.services.ml_service import train_random_forest
-    background_tasks.add_task(train_random_forest, forecast.id)
+    # Trigger actual true Background task
+    from app.services.orchestration_service import execute_optimization_pipeline
+    background_tasks.add_task(execute_optimization_pipeline, opt_run.id)
 
     return forecast
 
@@ -61,5 +73,33 @@ def predict_forecast(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    # Dummy implementation, to be replaced by actual ML predict
-    return {"success": True, "data": {"predictions": [100, 110, 105, 120, 115, 130, 125][:request.days]}}
+    from app.services.storage_service import StorageService
+    from app.models.models import OptimizationRun
+    import pandas as pd
+
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    latest_run = db.query(OptimizationRun).filter(OptimizationRun.project_id == project.id).order_by(OptimizationRun.created_at.desc()).first()
+    if not latest_run:
+        raise HTTPException(status_code=404, detail="No optimization run found for project")
+
+    storage = StorageService(latest_run.id)
+    forecast_path = storage.data_path("processed/forecast_results.csv")
+    
+    if not forecast_path.exists():
+        raise HTTPException(status_code=404, detail="Forecast results not found for the latest run")
+
+    try:
+        df = pd.read_csv(forecast_path)
+        # Just grab the predicted calls as a flat array for the requested days (assuming 1 day = 24 hours, so request.days * 24)
+        predictions = df['predicted_calls'].tolist()
+        
+        # Optionally slice by days
+        limit = min(request.days * 24, len(predictions))
+        predictions = predictions[:limit]
+        
+        return {"success": True, "data": {"predictions": predictions}}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read forecast data: {str(e)}")

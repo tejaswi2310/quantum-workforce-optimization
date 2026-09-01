@@ -97,7 +97,7 @@ def test_full_pipeline_e2e(client: TestClient):
     
     runs_resp = client.get(f"/api/v1/projects/{project_id}/optimize/runs", headers=headers)
     assert runs_resp.status_code == 200
-    assert len(runs_resp.json()) == 4
+    assert len(runs_resp.json()) == 5
     
     run_resp = client.get(f"/api/v1/projects/{project_id}/optimize/runs/{class_id}", headers=headers)
     assert run_resp.status_code == 200

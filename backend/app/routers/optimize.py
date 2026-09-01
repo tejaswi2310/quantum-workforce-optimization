@@ -24,8 +24,8 @@ def start_optimization(project_id: uuid.UUID, run_type: str, parameters: dict, b
     db.refresh(opt_run)
 
     # Trigger Background task
-    from app.services.ml_service import run_optimization
-    background_tasks.add_task(run_optimization, opt_run.id)
+    from app.services.orchestration_service import execute_optimization_pipeline
+    background_tasks.add_task(execute_optimization_pipeline, opt_run.id)
 
     return opt_run
 

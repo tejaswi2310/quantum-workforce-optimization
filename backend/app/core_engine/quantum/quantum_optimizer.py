@@ -153,6 +153,8 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     match_status = "YES" if (quantum_status == "SUCCESS" and classical_cost == quantum_cost and np.array_equal(classical_config, quantum_config)) else "NO"
     
     comparison_data = [
+        {"Metric": "Execution Backend", "Classical_Exact": "CPU", "Quantum_QAOA": "Simulator (StatevectorSampler)" if quantum_status == "SUCCESS" else quantum_status, "Match": "N/A"},
+        {"Metric": "Decision Variables", "Classical_Exact": str(N), "Quantum_QAOA": str(N), "Match": "YES"},
         {"Metric": "Target Agents T0", "Classical_Exact": str(d_t0), "Quantum_QAOA": str(d_t0), "Match": "N/A"},
         {"Metric": "Target Agents T1", "Classical_Exact": str(d_t1), "Quantum_QAOA": str(d_t1), "Match": "N/A"},
         {"Metric": "Objective Value", "Classical_Exact": f"{classical_cost:.2f}", "Quantum_QAOA": f"{quantum_cost:.2f}" if quantum_status == "SUCCESS" else quantum_status, "Match": match_status},
