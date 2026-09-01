@@ -1,4 +1,7 @@
-from src.queue_simulator import required_agents_for_sla, erlang_c
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
+from app.core_engine.queue.queue_simulator import required_agents_for_sla, erlang_c
 import math
 
 print("=== HAND-CALCULATED SANITY CHECK ===")

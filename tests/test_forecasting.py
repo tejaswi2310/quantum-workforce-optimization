@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import pytest
-from src.demand_forecaster import smape
+from app.core_engine.forecasting.demand_forecaster import smape
 
 def test_smape_zero_handling():
     # Should handle zeros gracefully

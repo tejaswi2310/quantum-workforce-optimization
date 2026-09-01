@@ -6,8 +6,8 @@ import pandas as pd
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.queue_simulator import erlang_c
-from src.quantum_optimizer import solve_qubo_classical
+from app.core_engine.queue.queue_simulator import erlang_c
+from app.core_engine.quantum.quantum_optimizer import solve_qubo_classical
 
 def test_erlang_c():
     """Test Erlang C calculates correctly."""

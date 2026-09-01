@@ -1,6 +1,6 @@
 import pytest
 import math
-from src.queue_simulator import required_agents_for_sla, TARGET_SLA, TARGET_WAIT_SECONDS, erlang_c
+from app.core_engine.queue.queue_simulator import required_agents_for_sla, TARGET_SLA, TARGET_WAIT_SECONDS, erlang_c
 
 def test_erlang_c_low_traffic():
     c, A, sla, p_w = required_agents_for_sla(calls=5.0, aht_seconds=300, interval_seconds=3600, target_sla=0.8, target_wait_seconds=20)

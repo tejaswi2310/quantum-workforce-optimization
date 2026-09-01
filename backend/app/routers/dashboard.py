@@ -116,7 +116,7 @@ def get_dashboard_analytics(
         }
     }
 
-from src.queue_simulator import required_agents_for_sla, erlang_c
+from app.core_engine.queue.queue_simulator import required_agents_for_sla, erlang_c
 @router.get("/whatif")
 def get_whatif_scenario(
     project_id: uuid.UUID,

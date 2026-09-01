@@ -166,7 +166,11 @@ def calculate_kpis(vol_mult, df_c, df_v):
         return {}
     
     import math
-    from src.queue_simulator import erlang_c
+    import sys
+    import os
+    if os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend") not in sys.path:
+        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+    from app.core_engine.queue.queue_simulator import erlang_c
     
     # Calculate costs (Schedule is fixed, demand scales)
     opt_agents = int(df_c['scheduled_agents'].sum())
@@ -550,7 +554,11 @@ with tabs[5]:
         
         if volume_multiplier != 1.0:
             import math
-            from src.queue_simulator import erlang_c
+            import sys
+            import os
+            if os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend") not in sys.path:
+                sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+            from app.core_engine.queue.queue_simulator import erlang_c
             def compute_sla(row):
                 c = int(row['agents'])
                 calls = row['calls'] * volume_multiplier

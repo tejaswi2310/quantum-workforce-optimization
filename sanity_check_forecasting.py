@@ -1,7 +1,9 @@
+import sys
 import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
-from src.demand_forecaster import smape
+from app.core_engine.forecasting.demand_forecaster import smape
 
 print("=== FORECASTING SANITY CHECK ===")
 

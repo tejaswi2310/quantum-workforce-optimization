@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 import math
 from ortools.sat.python import cp_model
-from src.queue_simulator import required_agents_for_sla, TARGET_SLA, TARGET_WAIT_SECONDS, erlang_c
+from app.core_engine.queue.queue_simulator import required_agents_for_sla, TARGET_SLA, TARGET_WAIT_SECONDS, erlang_c
 
 def run_classical_optimization():
     print("--- Running Classical Optimization (Full MIP) ---")
