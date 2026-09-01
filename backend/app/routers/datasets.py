@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
 import pandas as pd
+import uuid
 
 from app.models.database import get_db
 from app.models.models import Dataset, Project, User
@@ -18,7 +19,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/upload", response_model=DatasetResponse)
 async def upload_dataset(
-    project_id: str,
+    project_id: uuid.UUID,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -30,17 +31,29 @@ async def upload_dataset(
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=415, detail="Only CSV files are supported")
 
-    file_path = os.path.join(UPLOAD_DIR, f"{project_id}_{file.filename}")
+    safe_filename = f"{project_id}_{uuid.uuid4()}.csv"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
         df = pd.read_csv(file_path)
+        if df.empty:
+            raise ValueError("CSV file is empty")
+        
+        required_cols = {'date', 'hour', 'day_of_week', 'channel', 'skill_group', 'calls_received'}
+        missing_cols = required_cols - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
+            
         row_count = len(df)
         schema_def = df.dtypes.astype(str).to_dict()
+    except pd.errors.EmptyDataError:
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail="CSV file is empty")
     except Exception as e:
         os.remove(file_path)
-        raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error processing CSV: {str(e)}")
 
     dataset = Dataset(
         project_id=project.id,
@@ -56,7 +69,7 @@ async def upload_dataset(
 
 @router.get("/", response_model=List[DatasetResponse])
 def get_datasets(
-    project_id: str,
+    project_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):

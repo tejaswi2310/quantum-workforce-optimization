@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
@@ -13,6 +13,41 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042']
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("analytics")
+  const [metrics, setMetrics] = useState<any>(null)
+  const [analytics, setAnalytics] = useState<any>(null)
+  const [optimization, setOptimization] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true)
+        // In a real app we'd handle dynamic project_id
+        const projectId = "default"
+        
+        const [metricsRes, analyticsRes, optRes] = await Promise.all([
+          fetch(`/api/v1/projects/${projectId}/dashboard/metrics`),
+          fetch(`/api/v1/projects/${projectId}/dashboard/analytics`),
+          fetch(`/api/v1/projects/${projectId}/dashboard/optimization`)
+        ])
+        
+        if (!metricsRes.ok || !analyticsRes.ok || !optRes.ok) {
+          throw new Error("Failed to load dashboard data. Please ensure the pipeline has been run.")
+        }
+        
+        setMetrics(await metricsRes.json())
+        setAnalytics(await analyticsRes.json())
+        setOptimization(await optRes.json())
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchData()
+  }, [])
 
   const tabs = [
     { id: "analytics", label: "Analytics" },
@@ -23,27 +58,23 @@ export default function Dashboard() {
     { id: "validation", label: "Queue Validation" },
   ]
 
-  // Dummy Data for charts
-  const hourlyData = Array.from({ length: 24 }).map((_, i) => ({
-    hour: `${i}:00`,
-    calls: Math.floor(Math.random() * 800) + 50,
-  }))
-  
-  const pieData = [
-    { name: 'Voice', value: 60 },
-    { name: 'Chat', value: 30 },
-    { name: 'Email', value: 10 },
+  if (loading) {
+    return <div className="p-8 text-center text-muted-foreground animate-pulse">Loading optimization results...</div>
+  }
+
+  if (error || !metrics) {
+    return <div className="p-8 text-center text-destructive">{error || "Unable to load optimization results."}</div>
+  }
+
+  const mData = metrics.data || {}
+  const aData = analytics.data || {}
+  const oData = optimization.data || {}
+
+  // Generate basic forecast chart data for visualization based on eval metrics
+  // We assume a real API might return the actual forecasted timeseries array.
+  const forecastData = [
+    { date: "Test Set", predicted: 0, actual: 0 } // Placeholder if not supplied
   ]
-  
-  const forecastData = Array.from({ length: 7 }).map((_, i) => {
-    const base = Math.floor(Math.random() * 5000) + 3000
-    return {
-      date: `2026-08-0${i + 1}`,
-      predicted: base,
-      lower: base * 0.9,
-      upper: base * 1.1,
-    }
-  })
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -73,11 +104,11 @@ export default function Dashboard() {
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
               {[
-                { label: "Total Calls", value: "51,240" },
-                { label: "Avg SLA", value: "82.5%" },
-                { label: "Avg Agents", value: "58" },
-                { label: "Avg AHT", value: "240s" },
-                { label: "Peak Hour", value: "10:00 AM" },
+                { label: "Total Calls", value: (mData.total_calls || 0).toLocaleString() },
+                { label: "Avg SLA", value: `${(mData.avg_sla || 0).toFixed(1)}%` },
+                { label: "Avg Agents", value: mData.avg_agents },
+                { label: "Avg AHT", value: `${mData.avg_handle_time}s` },
+                { label: "Peak Hour", value: mData.peak_hour },
               ].map((stat, i) => (
                 <Card key={i}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -93,18 +124,25 @@ export default function Dashboard() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
               <Card className="col-span-4">
                 <CardHeader>
-                  <CardTitle>Calls per Hour</CardTitle>
+                  <CardTitle>Calls & Agents per Hour</CardTitle>
                 </CardHeader>
                 <CardContent className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={hourlyData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="hour" fontSize={12} tickLine={false} axisLine={false} />
-                      <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="calls" stroke="#8884d8" strokeWidth={3} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  {aData.calls_per_hour?.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={aData.calls_per_hour}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="hour" fontSize={12} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="left" fontSize={12} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar yAxisId="left" dataKey="calls" fill="#8884d8" name="Calls" />
+                        <Line yAxisId="right" type="monotone" dataKey="agents" stroke="#ff7300" strokeWidth={3} dot={false} name="Agents" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground">No data available</div>
+                  )}
                 </CardContent>
               </Card>
               <Card className="col-span-3">
@@ -115,7 +153,7 @@ export default function Dashboard() {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={pieData}
+                        data={aData.calls_by_channel || []}
                         cx="50%"
                         cy="50%"
                         innerRadius={60}
@@ -123,7 +161,7 @@ export default function Dashboard() {
                         paddingAngle={5}
                         dataKey="value"
                       >
-                        {pieData.map((entry, index) => (
+                        {(aData.calls_by_channel || []).map((entry: any, index: number) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
@@ -140,27 +178,22 @@ export default function Dashboard() {
         {activeTab === "forecasting" && (
           <div className="space-y-6">
             <div className="flex gap-4">
-              <Badge variant="secondary" className="px-4 py-2 text-sm">MAE: 6.44</Badge>
-              <Badge variant="secondary" className="px-4 py-2 text-sm">RMSE: 9.97</Badge>
-              <Badge variant="secondary" className="px-4 py-2 text-sm">R²: 0.86</Badge>
+              <Badge variant="secondary" className="px-4 py-2 text-sm">
+                Test MAE: {aData.forecast_metrics?.mae?.toFixed(2) || 'N/A'}
+              </Badge>
+              <Badge variant="secondary" className="px-4 py-2 text-sm">
+                Test RMSE: {aData.forecast_metrics?.rmse?.toFixed(2) || 'N/A'}
+              </Badge>
+              <Badge variant="secondary" className="px-4 py-2 text-sm">
+                Test sMAPE: {aData.forecast_metrics?.smape?.toFixed(2) || 'N/A'}%
+              </Badge>
             </div>
             <Card>
               <CardHeader>
-                <CardTitle>7-Day Demand Forecast</CardTitle>
+                <CardTitle>Forecast Evaluation (Chronological Test Set)</CardTitle>
               </CardHeader>
-              <CardContent className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={forecastData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Area type="monotone" dataKey="upper" fill="#82ca9d" stroke="none" fillOpacity={0.3} />
-                    <Area type="monotone" dataKey="lower" fill="#fff" stroke="none" />
-                    <Line type="monotone" dataKey="predicted" stroke="#8884d8" strokeWidth={3} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+              <CardContent className="h-[400px] flex items-center justify-center">
+                 <p className="text-muted-foreground">Timeseries forecast visualization requires full chronological arrays.</p>
               </CardContent>
             </Card>
           </div>
@@ -170,25 +203,27 @@ export default function Dashboard() {
           <div className="space-y-6">
              <Card>
               <CardHeader>
-                <CardTitle>Hourly Schedule (OR-Tools)</CardTitle>
+                <CardTitle>Hourly Schedule (OR-Tools CP-SAT)</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Hour</TableHead>
-                      <TableHead>Required</TableHead>
+                      <TableHead>Required (Erlang-C)</TableHead>
                       <TableHead>Scheduled</TableHead>
-                      <TableHead>Cost</TableHead>
+                      <TableHead>Shortfall</TableHead>
+                      <TableHead>Coverage Ratio</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[9,10,11,12].map(h => (
-                      <TableRow key={h}>
-                        <TableCell>{h}:00</TableCell>
-                        <TableCell>42</TableCell>
-                        <TableCell className="font-semibold text-primary">58</TableCell>
-                        <TableCell>$870.00</TableCell>
+                    {(oData.schedule || []).map((row: any) => (
+                      <TableRow key={row.hour}>
+                        <TableCell>{row.hour}</TableCell>
+                        <TableCell>{row.required}</TableCell>
+                        <TableCell className="font-semibold text-primary">{row.scheduled}</TableCell>
+                        <TableCell className={row.shortfall > 0 ? "text-destructive font-bold" : "text-green-600"}>{row.shortfall}</TableCell>
+                        <TableCell>{(row.coverage_ratio * 100).toFixed(1)}%</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -206,20 +241,21 @@ export default function Dashboard() {
                   <span className="h-2 w-2 rounded-full bg-primary animate-pulse"></span>
                   Qiskit QAOA (Quantum)
                 </CardTitle>
+                <p className="text-xs text-muted-foreground">Quantum Optimization Demonstration — Reduced Problem</p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex justify-between border-b pb-2">
                     <span className="text-muted-foreground">QUBO Size</span>
-                    <span className="font-semibold">8x8</span>
+                    <span className="font-semibold">{oData.quantum?.qubo_size || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between border-b pb-2">
-                    <span className="text-muted-foreground">Cost</span>
-                    <span className="font-semibold">$870</span>
+                    <span className="text-muted-foreground">Quantum Cost</span>
+                    <span className="font-semibold">{oData.quantum?.quantum_cost ? `$${oData.quantum.quantum_cost.toFixed(2)}` : 'N/A'}</span>
                   </div>
                   <div className="flex justify-between border-b pb-2">
-                    <span className="text-muted-foreground">Match vs Classical</span>
-                    <Badge className="bg-green-500">100%</Badge>
+                    <span className="text-muted-foreground">Match vs Classical (Reduced Instance)</span>
+                    <Badge className="bg-green-500">{oData.quantum?.match_percent ? `${oData.quantum.match_percent}%` : 'N/A'}</Badge>
                   </div>
                 </div>
               </CardContent>
@@ -227,16 +263,13 @@ export default function Dashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Classical Exact (OR-Tools)</CardTitle>
+                <p className="text-xs text-muted-foreground">Same Reduced Instance</p>
               </CardHeader>
               <CardContent>
                  <div className="space-y-4">
                   <div className="flex justify-between border-b pb-2">
-                    <span className="text-muted-foreground">Constraints</span>
-                    <span className="font-semibold">124</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-muted-foreground">Cost</span>
-                    <span className="font-semibold">$870</span>
+                    <span className="text-muted-foreground">Classical Cost</span>
+                    <span className="font-semibold">{oData.quantum?.classical_cost ? `$${oData.quantum.classical_cost.toFixed(2)}` : 'N/A'}</span>
                   </div>
                 </div>
               </CardContent>
@@ -246,29 +279,21 @@ export default function Dashboard() {
 
         {activeTab === "impact" && (
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Naive Cost</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Actual Optimized Cost</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-destructive">$1,440</div>
+                  <div className="text-3xl font-bold text-green-500">${(oData.total_cost || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Optimized Cost</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Scheduled Agents (Unique)</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-green-500">$870</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-primary text-primary-foreground">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-primary-foreground/80">Annual Savings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-4xl font-bold">$208,050</div>
+                  <div className="text-3xl font-bold">{mData.total_agents || 0}</div>
                 </CardContent>
               </Card>
             </div>
@@ -281,8 +306,8 @@ export default function Dashboard() {
         {activeTab === "validation" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium">Erlang C Simulation</h3>
-              <Badge className="bg-green-500 px-4 py-1 text-sm">24/24 Hours PASS</Badge>
+              <h3 className="text-lg font-medium">Analytical Erlang-C Queue Validation</h3>
+              <Badge className="bg-green-500 px-4 py-1 text-sm">{mData.min_sla >= 80 ? "PASS" : "FAIL (SLA Breach)"}</Badge>
             </div>
             <Card>
               <CardContent className="p-0">
@@ -298,14 +323,14 @@ export default function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[9,10,11].map(h => (
-                      <TableRow key={h}>
-                        <TableCell>{h}:00</TableCell>
-                        <TableCell>420</TableCell>
-                        <TableCell>58</TableCell>
-                        <TableCell className="font-semibold text-green-600">89.4%</TableCell>
-                        <TableCell>12.4</TableCell>
-                        <TableCell><Badge className="bg-green-500/20 text-green-700 hover:bg-green-500/30">PASS</Badge></TableCell>
+                    {(aData.calls_per_hour || []).map((row: any) => (
+                      <TableRow key={row.hour}>
+                        <TableCell>{row.hour}:00</TableCell>
+                        <TableCell>{Math.round(row.calls)}</TableCell>
+                        <TableCell>{row.agents}</TableCell>
+                        <TableCell className="font-semibold text-green-600">{(row.sla).toFixed(1)}%</TableCell>
+                        <TableCell>{row.asa || 0}</TableCell>
+                        <TableCell><Badge className={row.sla >= 80 ? "bg-green-500/20 text-green-700" : "bg-red-500/20 text-red-700"}>{row.sla >= 80 ? 'PASS' : 'FAIL'}</Badge></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

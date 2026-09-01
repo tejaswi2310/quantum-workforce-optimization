@@ -5,6 +5,7 @@ from app.models.database import get_db
 from app.models.models import Project, User
 from app.schemas.project import ProjectCreate, ProjectResponse
 from app.dependencies import get_current_active_user
+from uuid import UUID
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
@@ -25,14 +26,14 @@ def create_project(project_in: ProjectCreate, db: Session = Depends(get_db), cur
     return project
 
 @router.get("/{id}", response_model=ProjectResponse)
-def get_project(id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+def get_project(id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     project = db.query(Project).filter(Project.id == id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
 
 @router.delete("/{id}")
-def delete_project(id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+def delete_project(id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     project = db.query(Project).filter(Project.id == id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

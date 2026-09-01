@@ -1,9 +1,10 @@
 from pydantic import BaseModel
 from typing import Optional
+import uuid
 
 class QueueValidationResponse(BaseModel):
-    id: str
-    optimization_run_id: str
+    id: uuid.UUID
+    optimization_run_id: uuid.UUID
     hour: int
     calls: int
     agents: int
@@ -17,4 +18,4 @@ class QueueValidationResponse(BaseModel):
         from_attributes = True
 
 class ValidateRequest(BaseModel):
-    optimization_run_id: str
+    optimization_run_id: uuid.UUID

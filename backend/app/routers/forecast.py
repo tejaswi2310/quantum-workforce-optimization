@@ -4,12 +4,13 @@ from app.models.database import get_db
 from app.models.models import Project, User, ForecastModel
 from app.schemas.forecast import ForecastResponse, PredictRequest
 from app.dependencies import get_current_active_user
+import uuid
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/forecast", tags=["forecast"])
 
 @router.post("/train", response_model=ForecastResponse)
 def train_forecast(
-    project_id: str,
+    project_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -25,14 +26,14 @@ def train_forecast(
 
     # Trigger Background task
     from app.services.ml_service import train_random_forest
-    background_tasks.add_task(train_random_forest, str(forecast.id))
+    background_tasks.add_task(train_random_forest, forecast.id)
 
     return forecast
 
 @router.get("/status/{task_id}", response_model=ForecastResponse)
 def get_forecast_status(
-    project_id: str,
-    task_id: str,
+    project_id: uuid.UUID,
+    task_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -44,7 +45,7 @@ def get_forecast_status(
 
 @router.get("/results", response_model=list[ForecastResponse])
 def get_forecast_results(
-    project_id: str,
+    project_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -55,7 +56,7 @@ def get_forecast_results(
 
 @router.post("/predict")
 def predict_forecast(
-    project_id: str,
+    project_id: uuid.UUID,
     request: PredictRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)

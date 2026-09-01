@@ -1,10 +1,11 @@
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from datetime import datetime
+import uuid
 
 class OptimizationRunResponse(BaseModel):
-    id: str
-    project_id: str
+    id: uuid.UUID
+    project_id: uuid.UUID
     run_type: str
     parameters: Optional[Dict[str, Any]]
     results: Optional[Dict[str, Any]]

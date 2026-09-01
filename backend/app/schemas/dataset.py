@@ -1,10 +1,11 @@
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 class DatasetResponse(BaseModel):
-    id: str
-    project_id: str
+    id: UUID
+    project_id: UUID
     filename: str
     row_count: int
     schema_definition: Optional[Dict[str, Any]]

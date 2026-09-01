@@ -6,6 +6,7 @@ from app.models.database import get_db
 from app.models.models import Project, User, Report
 from app.schemas.report import ReportResponse, GenerateReportRequest
 from app.dependencies import get_current_active_user
+import uuid
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/reports", tags=["reports"])
 
@@ -14,7 +15,7 @@ os.makedirs(REPORT_DIR, exist_ok=True)
 
 @router.post("/generate", response_model=ReportResponse)
 def generate_report(
-    project_id: str,
+    project_id: uuid.UUID,
     req: GenerateReportRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -23,14 +24,35 @@ def generate_report(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    import pandas as pd
+    
+    results_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "results")
+    shifts_detailed_path = os.path.join(results_path, "agent_shifts_detailed.csv")
+    
+    opt_cost = 0.0
+    if os.path.exists(shifts_detailed_path):
+        df_det = pd.read_csv(shifts_detailed_path)
+        opt_cost = float(df_det['cost'].sum())
+        
+    # Naive peak-staffing calculation: schedule peak demand agents for all 24 hours
+    naive_cost = 0.0
+    shift_schedule_path = os.path.join(results_path, "shift_schedule.csv")
+    if os.path.exists(shift_schedule_path):
+        df_shifts = pd.read_csv(shift_schedule_path)
+        peak_agents = int(df_shifts['required_agents'].max())
+        naive_cost = peak_agents * 24 * 15.0 # Wage = $15/hr
+        
+    daily_savings = max(0, naive_cost - opt_cost)
+    annual_savings = daily_savings * 365
+
     file_path = os.path.join(REPORT_DIR, f"{project_id}_report.txt")
     with open(file_path, "w") as f:
         f.write("Business Impact Report\n")
         f.write("========================\n")
-        f.write("Naive Cost: $1,440\n")
-        f.write("Optimized Cost: $870\n")
-        f.write("Daily Savings: $570\n")
-        f.write("Annual Savings: $208,050\n")
+        f.write(f"Naive Cost: ${naive_cost:,.2f}\n")
+        f.write(f"Optimized Cost: ${opt_cost:,.2f}\n")
+        f.write(f"Daily Savings: ${daily_savings:,.2f}\n")
+        f.write(f"Annual Savings: ${annual_savings:,.2f}\n")
 
     report = Report(
         project_id=project.id,
@@ -45,7 +67,7 @@ def generate_report(
 
 @router.get("/", response_model=list[ReportResponse])
 def get_reports(
-    project_id: str,
+    project_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -57,8 +79,8 @@ def get_reports(
 
 @router.get("/{report_id}/download")
 def download_report(
-    project_id: str,
-    report_id: str,
+    project_id: uuid.UUID,
+    report_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):

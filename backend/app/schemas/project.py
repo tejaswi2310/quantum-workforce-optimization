@@ -1,13 +1,14 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
 
 class ProjectResponse(BaseModel):
-    id: str
+    id: UUID
     name: str
     description: Optional[str]
     status: str

@@ -1,18 +1,18 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 from datetime import datetime
+import uuid
 
 class ForecastResponse(BaseModel):
-    id: str
-    project_id: str
+    id: uuid.UUID
+    project_id: uuid.UUID
     model_path: Optional[str]
     metrics: Optional[Dict[str, float]]
     feature_importance: Optional[Dict[str, float]]
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 class PredictRequest(BaseModel):
     days: int = 7

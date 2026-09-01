@@ -4,12 +4,13 @@ from app.models.database import get_db
 from app.models.models import Project, User, OptimizationRun, QueueValidation
 from app.schemas.validate import QueueValidationResponse, ValidateRequest
 from app.dependencies import get_current_active_user
+import uuid
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/validate", tags=["validate"])
 
 @router.post("/queue", response_model=list[QueueValidationResponse])
 def validate_queue(
-    project_id: str,
+    project_id: uuid.UUID,
     req: ValidateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -30,7 +31,7 @@ def validate_queue(
 
 @router.get("/results", response_model=list[QueueValidationResponse])
 def get_validation_results(
-    project_id: str,
+    project_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):

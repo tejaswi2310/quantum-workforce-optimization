@@ -5,6 +5,8 @@ from app.models.models import User
 from app.schemas.auth import UserCreate, UserLogin, Token, UserResponse
 from app.utils.security import verify_password, get_password_hash, create_access_token, create_refresh_token
 from app.dependencies import get_current_active_user
+from fastapi.security import OAuth2PasswordRequestForm
+from typing import Annotated
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -27,10 +29,9 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     db.refresh(user)
     return user
 
-@router.post("/login", response_model=Token)
-def login(user_in: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == user_in.email).first()
-    if not user or not verify_password(user_in.password, user.hashed_password):
+def authenticate_user(email: str, password: str, db: Session):
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -38,7 +39,21 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         )
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
-    
+    return user
+
+@router.post("/login", response_model=Token)
+def login(user_in: UserLogin, db: Session = Depends(get_db)):
+    user = authenticate_user(user_in.email, user_in.password, db)
+    access_token = create_access_token(subject=user.id)
+    refresh_token = create_refresh_token(subject=user.id)
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+@router.post("/token", response_model=Token)
+def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Session = Depends(get_db)
+):
+    user = authenticate_user(form_data.username, form_data.password, db)
     access_token = create_access_token(subject=user.id)
     refresh_token = create_refresh_token(subject=user.id)
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}

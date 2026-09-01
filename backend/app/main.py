@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Quantum Workforce Optimizer API",
-    description="API for the Quantum Workforce Optimizer platform",
+    description="""API for the Quantum Workforce Optimizer platform.
+    
+**Authentication Note:** 
+JWT Access Tokens obtained via `/api/v1/auth/login` are valid for **15 minutes**. 
+After 15 minutes, requests to protected endpoints will return `401 Unauthorized`. 
+When using this Swagger UI, you must re-authenticate using the **Authorize** button if your token expires.
+""",
     version="1.0.0",
 )
 

@@ -1,13 +1,12 @@
 """
 Module for executing quantum optimization.
 Builds a dynamically generated QUBO matrix for a Reduced Workforce Optimization Problem
-based on actual demand, and compares classical exact results against Qiskit QAOA simulation.
+based on ACTUAL demand, and compares classical exact results against Qiskit QAOA simulation.
 """
 import os
 import numpy as np
 import pandas as pd
 
-# We will try importing Qiskit components, but provide a robust fallback if they fail
 QISKIT_AVAILABLE = False
 try:
     from qiskit_optimization import QuadraticProgram
@@ -18,7 +17,6 @@ try:
     QISKIT_AVAILABLE = True
 except Exception as e:
     print(f"Warning: Qiskit components could not be fully imported: {e}")
-    print("Fallback to simulated QAOA solver will be used.")
 
 def solve_qubo_classical(Q, N):
     """Exact classical solver using brute force over 2^N combinations."""
@@ -37,61 +35,75 @@ def solve_qubo_classical(Q, N):
     return best_config, best_val
 
 def run_quantum_optimization():
-    # Load Classical Results for Dynamic QUBO Generation
-    classical_path = os.path.join("results", "classical_optimization_schedule.csv")
-    if not os.path.exists(classical_path):
-        raise FileNotFoundError(f"Classical schedule not found at {classical_path}. Run classical_optimizer.py first.")
+    # Load actual forecast to define the reduced problem
+    forecast_path = os.path.join("data", "processed", "forecast_results.csv")
+    if not os.path.exists(forecast_path):
+        raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
         
-    df_classical = pd.read_csv(classical_path)
+    df_forecast = pd.read_csv(forecast_path)
     
-    # 1. Identify Reduced Problem Window (Peak 4-hours)
-    # We use a moving sum to find the busiest 4-hour consecutive block
-    df_classical['rolling_demand'] = df_classical['required_agents'].rolling(window=4, min_periods=1).sum()
-    peak_end_hour = df_classical['rolling_demand'].idxmax()
-    peak_start_hour = max(0, peak_end_hour - 3)
+    # Define a reduced problem: 1 Skill, 2 Hours, 4 Agents
+    target_skill = "Technical"
+    df_skill = df_forecast[df_forecast['skill_group'] == target_skill]
     
-    peak_df = df_classical.iloc[peak_start_hour:peak_end_hour+1]
-    d_target = int(peak_df['required_agents'].max())
+    # Take hours 10 and 11 as the peak window
+    d_t0 = int(np.ceil(df_skill[df_skill['hour'] == 10]['predicted_calls'].sum() * 300 / 3600))
+    d_t1 = int(np.ceil(df_skill[df_skill['hour'] == 11]['predicted_calls'].sum() * 300 / 3600))
+    
+    # Scale down demand for the toy 4-agent problem (e.g. cap at 2)
+    d_t0 = min(d_t0, 2)
+    d_t1 = min(d_t1, 2)
     
     print(f"--- REDUCED QUANTUM PROBLEM ---")
-    print(f"Peak Window: {peak_start_hour:02d}:00 to {peak_end_hour:02d}:00")
-    print(f"Target Agents Required (d): {d_target}")
+    print(f"Skill: {target_skill}, Hours: 10:00 - 12:00")
+    print(f"Demand T0: {d_t0}, Demand T1: {d_t1}")
     
-    # 2. Build QUBO Matrix
-    # We allocate N available candidate shifts to cover this peak
-    N = 8 
-    # Ensure target doesn't exceed N for this reduced problem
-    d = min(d_target, N)
+    # 4 Agents, 2 time periods => 8 decision variables x_{i,t}
+    # Indexing: var_idx = i * 2 + t
+    N_agents = 4
+    N_time = 2
+    N = N_agents * N_time
     
     wage = 15
-    penalty = 30
+    alpha = 50 # Shortfall/Idle quadratic penalty weight
     
-    # H = sum(wage * q_i) + penalty * (sum(q_i) - d)^2
-    # Q_ii = wage + penalty - 2 * penalty * d
-    # Q_ij = penalty
+    # Objective: min Z = sum_{i,t} wage * x_{i,t} + sum_{t} alpha * (D_t - sum_i x_{i,t})^2
+    # Expanding the penalty term:
+    # (D_t - sum_i x_{i,t})^2 = D_t^2 - 2 D_t sum_i x_{i,t} + (sum_i x_{i,t})^2
+    # = D_t^2 - 2 D_t sum_i x_{i,t} + sum_i x_{i,t} + 2 sum_{i < j} x_{i,t} x_{j,t}  (since x^2 = x for binary)
     
     Q = np.zeros((N, N))
-    for i in range(N):
-        Q[i, i] = wage + penalty - 2 * penalty * d
-        for j in range(N):
-            if i != j:
-                Q[i, j] = penalty
+    
+    # Add linear terms (diagonal)
+    for i in range(N_agents):
+        for t in range(N_time):
+            idx = i * N_time + t
+            D_t = d_t0 if t == 0 else d_t1
+            Q[idx, idx] += wage - 2 * alpha * D_t + alpha
+            
+    # Add quadratic terms (off-diagonal)
+    for t in range(N_time):
+        for i in range(N_agents):
+            for j in range(i + 1, N_agents):
+                idx1 = i * N_time + t
+                idx2 = j * N_time + t
+                Q[idx1, idx2] += 2 * alpha
                 
-    print(f"Generated {N}x{N} QUBO Matrix Q:")
-    print(Q)
-    
-    # Solve Classically (Exact)
+    # Solve Classically (Exact brute force for exact parity benchmark)
     classical_config, classical_val = solve_qubo_classical(Q, N)
-    classical_agents = sum(classical_config)
-    classical_cost = classical_agents * wage
     
-    # Solve with Qiskit or fallback
+    # Re-add the constant D_t^2 term to get actual objective value
+    constant = alpha * (d_t0**2 + d_t1**2)
+    classical_cost = classical_val + constant
+    
+    # Solve with Qiskit
     quantum_config = None
     quantum_cost = None
-    quantum_agents = None
+    quantum_status = "FAILED/SKIPPED"
     
     if QISKIT_AVAILABLE:
         try:
+            print("Attempting to solve with Qiskit QAOA...")
             qp = QuadraticProgram()
             for i in range(N):
                 qp.binary_var(name=f'x_{i}')
@@ -101,7 +113,8 @@ def run_quantum_optimization():
             for i in range(N):
                 linear[f'x_{i}'] = Q[i, i]
                 for j in range(i+1, N):
-                    quadratic[(f'x_{i}', f'x_{j}')] = Q[i, j] + Q[j, i]
+                    if Q[i, j] != 0:
+                        quadratic[(f'x_{i}', f'x_{j}')] = Q[i, j]
                     
             qp.minimize(linear=linear, quadratic=quadratic)
             
@@ -111,35 +124,29 @@ def run_quantum_optimization():
             
             result = optimizer.solve(qp)
             quantum_config = np.array([int(result.x[i]) for i in range(N)])
-            quantum_agents = sum(quantum_config)
-            quantum_cost = quantum_agents * wage
+            quantum_val = quantum_config.dot(Q).dot(quantum_config)
+            quantum_cost = quantum_val + constant
+            quantum_status = "SUCCESS"
             print("Successfully solved using Qiskit QAOA!")
         except Exception as ex:
             print(f"Error solving with Qiskit QAOA: {ex}")
-            print("Running simulated QAOA solver instead...")
-            quantum_config = classical_config.copy()
-            quantum_agents = classical_agents
-            quantum_cost = classical_cost
+            quantum_status = f"FAILED: {ex}"
     else:
-        # Fallback simulation
-        quantum_config = classical_config.copy()
-        quantum_agents = classical_agents
-        quantum_cost = classical_cost
-        print("Successfully simulated QAOA execution.")
+        print("Qiskit not available. Skipping QAOA execution.")
+        quantum_status = "SKIPPED (Qiskit missing)"
         
-    print(f"Classical Exact Result: Cost = ${classical_cost:.2f}, Config = {list(classical_config)}")
-    print(f"Quantum QAOA Result: Cost = ${quantum_cost:.2f}, Config = {list(quantum_config)}")
+    print(f"Classical Exact Result: Cost = {classical_cost:.2f}, Config = {list(classical_config)}")
+    if quantum_status == "SUCCESS":
+        print(f"Quantum QAOA Result: Cost = {quantum_cost:.2f}, Config = {list(quantum_config)}")
     
     # Compare results
-    match_status = "YES" if (classical_cost == quantum_cost and np.array_equal(classical_config, quantum_config)) else "NO"
-    match_pct = "100%" if match_status == "YES" else "0%"
+    match_status = "YES" if (quantum_status == "SUCCESS" and classical_cost == quantum_cost and np.array_equal(classical_config, quantum_config)) else "NO"
     
     comparison_data = [
-        {"Metric": "Target Agents (d)", "Classical_Exact": str(d), "Quantum_QAOA": str(d), "Match": "N/A"},
-        {"Metric": "Classical Cost", "Classical_Exact": f"${classical_cost:.2f}", "Quantum_QAOA": f"${quantum_cost:.2f}", "Match": match_status},
-        {"Metric": "Quantum Cost", "Classical_Exact": f"${classical_cost:.2f}", "Quantum_QAOA": f"${quantum_cost:.2f}", "Match": match_status},
-        {"Metric": "Agents Scheduled", "Classical_Exact": str(classical_agents), "Quantum_QAOA": str(quantum_agents), "Match": match_status},
-        {"Metric": "Optimal Config", "Classical_Exact": str(list(classical_config)), "Quantum_QAOA": str(list(quantum_config)), "Match": match_pct}
+        {"Metric": "Target Agents T0", "Classical_Exact": str(d_t0), "Quantum_QAOA": str(d_t0), "Match": "N/A"},
+        {"Metric": "Target Agents T1", "Classical_Exact": str(d_t1), "Quantum_QAOA": str(d_t1), "Match": "N/A"},
+        {"Metric": "Objective Value", "Classical_Exact": f"{classical_cost:.2f}", "Quantum_QAOA": f"{quantum_cost:.2f}" if quantum_status == "SUCCESS" else quantum_status, "Match": match_status},
+        {"Metric": "Optimal Config", "Classical_Exact": str(list(classical_config)), "Quantum_QAOA": str(list(quantum_config)) if quantum_status == "SUCCESS" else quantum_status, "Match": match_status}
     ]
     
     df_comparison = pd.DataFrame(comparison_data)

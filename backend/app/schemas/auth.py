@@ -1,9 +1,10 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
+from uuid import UUID
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=72)
     full_name: Optional[str] = None
 
 class UserLogin(BaseModel):
@@ -16,7 +17,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 class UserResponse(BaseModel):
-    id: str
+    id: UUID
     email: EmailStr
     full_name: Optional[str]
     role: str
