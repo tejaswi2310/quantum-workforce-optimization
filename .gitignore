@@ -43,3 +43,8 @@ Thumbs.db
 
 *.db
 
+
+# Runtime-generated storage
+backend/storage/
+reports/
+uploads/
