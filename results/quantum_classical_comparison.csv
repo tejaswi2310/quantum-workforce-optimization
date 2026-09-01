@@ -1,5 +1,5 @@
 Metric,Classical_Exact,Quantum_QAOA,Match
 Target Agents T0,2,2,N/A
 Target Agents T1,2,2,N/A
-Objective Value,60.00,60.00,YES
-Optimal Config,"[np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1), np.int64(1)]","[np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1), np.int64(1)]",YES
+Objective Value,60.00,60.00,NO
+Optimal Config,"[np.int64(0), np.int64(0), np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1), np.int64(1)]","[np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(1), np.int64(0), np.int64(0), np.int64(1)]",NO

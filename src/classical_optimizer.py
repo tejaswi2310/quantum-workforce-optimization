@@ -74,9 +74,9 @@ def run_classical_optimization():
             demand[(k, t)] = int(val)
             
     # 2. Setup Agents and Skills
-    # To satisfy demand (~58 peak total), we generate 80 agents with random skills
+    # To satisfy demand (~753 total agent-hours), we generate 120 agents with random skills
     np.random.seed(42)
-    num_agents = 80
+    num_agents = 120
     agents = []
     
     for i in range(num_agents):
@@ -135,67 +135,71 @@ def run_classical_optimization():
     # 4. Initialize CP-SAT Model
     model = cp_model.CpModel()
     
-    # Variables
-    # y[i, s] = 1 if agent i takes shift template s
-    y = {}
-    for i in range(num_agents):
-        for s, template in enumerate(shift_templates):
-            y[(i, s)] = model.NewBoolVar(f'y_{i}_{s}')
-            
-    # Each agent takes exactly one shift template (can be 'None')
-    for i in range(num_agents):
-        model.AddExactlyOne([y[(i, s)] for s in range(len(shift_templates))])
+    # Group agents by skill profile
+    profiles = {}
+    for i, agent in enumerate(agents):
+        prof_key = tuple(sorted(agent['skills']))
+        if prof_key not in profiles:
+            profiles[prof_key] = []
+        profiles[prof_key].append(agent['id'])
         
-    # x[i, t] = 1 if agent i is working at hour t
-    x = {}
-    for i in range(num_agents):
-        for t in range(24):
-            x[(i, t)] = model.NewBoolVar(f'x_{i}_{t}')
-            # Link x to y
-            model.Add(x[(i, t)] == sum(y[(i, s)] * shift_templates[s]['x'][t] for s in range(len(shift_templates))))
+    # count[p, s] = number of agents with profile p taking shift template s
+    count_vars = {}
+    for p_key, agent_ids in profiles.items():
+        for s in range(len(shift_templates)):
+            # Cannot assign more agents than exist in this profile
+            count_vars[(p_key, s)] = model.NewIntVar(0, len(agent_ids), f'count_{p_key}_{s}')
             
-    # Agent assignment to skills at hour t
-    # assign[i, k, t] = 1 if agent i is working AND answering skill k at time t
-    assign = {}
-    for i in range(num_agents):
-        agent_skills = agents[i]['skills']
+    # Total agents assigned to any shift for a profile must not exceed available agents in that profile
+    for p_key, agent_ids in profiles.items():
+        model.Add(sum(count_vars[(p_key, s)] for s in range(len(shift_templates))) <= len(agent_ids))
+        
+    # available_at_hour[p_key, t] = sum(count[p_key, s] * x[s, t])
+    available_at_hour = {}
+    for p_key in profiles.keys():
+        for t in range(24):
+            expr = sum(count_vars[(p_key, s)] for s in range(len(shift_templates)) if shift_templates[s]['x'][t] == 1)
+            available_at_hour[(p_key, t)] = model.NewIntVar(0, len(profiles[p_key]), f'avail_{p_key}_{t}')
+            model.Add(available_at_hour[(p_key, t)] == expr)
+            
+    # assign_prof[p_key, k, t] = how many agents of profile p are working on skill k at hour t
+    assign_prof = {}
+    for p_key in profiles.keys():
         for t in range(24):
             for k in skills:
-                assign[(i, k, t)] = model.NewBoolVar(f'assign_{i}_{k}_{t}')
-                if k not in agent_skills:
-                    model.Add(assign[(i, k, t)] == 0)
-            
-            # Agent can only handle 1 skill at a time, and only if they are working
-            model.Add(sum(assign[(i, k, t)] for k in skills) == x[(i, t)])
+                if k in p_key:
+                    assign_prof[(p_key, k, t)] = model.NewIntVar(0, len(profiles[p_key]), f'assign_{p_key}_{k}_{t}')
+                else:
+                    assign_prof[(p_key, k, t)] = 0
+                    
+            # Sum of assignments across skills must equal available agents for that profile
+            valid_skills = [k for k in skills if k in p_key]
+            model.Add(sum(assign_prof[(p_key, k, t)] for k in valid_skills) == available_at_hour[(p_key, t)])
 
-    # Shortfall variables
+    # Shortfall and idle variables
     shortfall = {}
-    for k in skills:
-        for t in range(24):
-            shortfall[(k, t)] = model.NewIntVar(0, 1000, f'shortfall_{k}_{t}')
-            # Coverage constraint: assigned agents + shortfall >= demand
-            assigned_total = sum(assign[(i, k, t)] for i in range(num_agents))
-            model.Add(assigned_total + shortfall[(k, t)] >= demand[(k, t)])
-            
-    # Idle time
-    # idle[k, t] = assigned - demand
     idle = {}
     for k in skills:
         for t in range(24):
+            shortfall[(k, t)] = model.NewIntVar(0, 1000, f'shortfall_{k}_{t}')
             idle[(k, t)] = model.NewIntVar(0, 1000, f'idle_{k}_{t}')
-            assigned_total = sum(assign[(i, k, t)] for i in range(num_agents))
-            # If assigned > demand, idle = assigned - demand. Else idle = 0.
-            # We can just penalize assigned_total since demand is constant, 
-            # but using idle explicitly is cleaner.
-            model.AddMaxEquality(idle[(k, t)], [0, assigned_total - demand[(k, t)]])
+            
+            assigned_total = sum(assign_prof[(p_key, k, t)] for p_key in profiles.keys() if k in p_key)
+            
+            diff = model.NewIntVar(-1000, 1000, f'diff_{k}_{t}')
+            model.Add(diff == assigned_total - demand[(k, t)])
+            model.AddMaxEquality(idle[(k, t)], [0, diff])
+            
+            neg_diff = model.NewIntVar(-1000, 1000, f'neg_diff_{k}_{t}')
+            model.Add(neg_diff == demand[(k, t)] - assigned_total)
+            model.AddMaxEquality(shortfall[(k, t)], [0, neg_diff])
             
     # 5. Objective Function
-    # Weights based on manager priorities
     w_cost = 1.0
-    w_shortfall = 50.0  # High penalty for missing SLA
+    w_shortfall = 200.0  # Must strictly exceed shift cost (120) to prevent understaffing
     w_idle = 5.0        # Minor penalty for overstaffing
     
-    total_cost = sum(y[(i, s)] * shift_templates[s]['cost'] for i in range(num_agents) for s in range(len(shift_templates)))
+    total_cost = sum(count_vars[(p_key, s)] * shift_templates[s]['cost'] for p_key in profiles.keys() for s in range(len(shift_templates)))
     total_shortfall = sum(shortfall[(k, t)] for k in skills for t in range(24))
     total_idle = sum(idle[(k, t)] for k in skills for t in range(24))
     
@@ -221,39 +225,49 @@ def run_classical_optimization():
             total_sched = 0
             for k in skills:
                 req = demand[(k, t)]
-                sched = sum(solver.Value(assign[(i, k, t)]) for i in range(num_agents))
+                sched = sum(solver.Value(assign_prof[(p_key, k, t)]) for p_key in profiles.keys() if k in p_key)
                 total_req += req
                 total_sched += sched
                 
-            # Compute cost for the hour (apportioned base wage + overtime)
-            # For simplicity, we just charge $15 per scheduled agent-hour in this summary
-            cost_h = total_sched * 15
-            
             results.append({
                 'hour': t,
+                'interval': f"{t:02d}:00-{(t+1)%24:02d}:00",
                 'calls': df_day[df_day['hour'] == t]['predicted_calls'].sum(),
                 'required_agents': total_req,
-                'scheduled_agents': total_sched,
-                'cost': cost_h
+                'scheduled_agents': total_sched
             })
+            
+        # Post-process to assign specific agent IDs
+        agent_shifts = []
+        total_cost_calc = 0
+        
+        for p_key, agent_ids in profiles.items():
+            assigned_idx = 0
+            for s in range(len(shift_templates)):
+                num_on_shift = solver.Value(count_vars[(p_key, s)])
+                template = shift_templates[s]
+                
+                for _ in range(num_on_shift):
+                    if template['name'] != 'None':
+                        agent_id = agent_ids[assigned_idx]
+                        total_cost_calc += template['cost']
+                        agent_shifts.append({
+                            'agent_id': agent_id,
+                            'skills': '|'.join(p_key),
+                            'shift_name': template['name'],
+                            'cost': template['cost'],
+                            'overtime': template['overtime']
+                        })
+                    assigned_idx += 1
+                    
+        # Apply total cost to all rows for reference (optional, better to put in shifts summary)
+        for r in results:
+            r['cost'] = total_cost_calc
             
         df_results = pd.DataFrame(results)
         os.makedirs("results", exist_ok=True)
         df_results.to_csv(os.path.join("results", "classical_optimization_schedule.csv"), index=False)
         print("Classical optimization completed and saved to results/classical_optimization_schedule.csv")
-        
-        # Also save detailed shift assignments for shift_optimizer and transparency
-        agent_shifts = []
-        for i in range(num_agents):
-            for s, template in enumerate(shift_templates):
-                if solver.Value(y[(i, s)]) == 1 and template['name'] != 'None':
-                    agent_shifts.append({
-                        'agent_id': i,
-                        'skills': '|'.join(agents[i]['skills']),
-                        'shift_name': template['name'],
-                        'cost': template['cost'],
-                        'overtime': template['overtime']
-                    })
         df_shifts = pd.DataFrame(agent_shifts)
         df_shifts.to_csv(os.path.join("results", "agent_shifts_detailed.csv"), index=False)
         

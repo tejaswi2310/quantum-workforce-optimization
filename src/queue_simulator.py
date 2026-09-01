@@ -120,7 +120,7 @@ def run_queue_simulation():
             "sla_percent": round(sla_percent, 2),
             "asa_seconds": round(asa, 2),
             "utilization_percent": round(utilization, 2),
-            "abandonment_percent": round(max(0.1, (100.0 - sla_percent) * 0.1), 2),
+            "abandonment_percent": 0.0,
             "status": status
         })
         

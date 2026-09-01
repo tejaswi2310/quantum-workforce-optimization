@@ -1,6 +1,7 @@
 """
 Module for training the AI demand forecasting model.
-Uses a RandomForestRegressor to predict hourly call volumes based on historical data.
+Uses a chronological split, constructs lag features safely without future leakage, 
+and trains a RandomForestRegressor.
 """
 import os
 import pickle
@@ -8,83 +9,178 @@ import numpy as np
 import pandas as pd
 from datetime import timedelta
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error
+
+def smape(y_true, y_pred):
+    """Calculates Symmetric Mean Absolute Percentage Error."""
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    numerator = np.abs(y_true - y_pred)
+    denominator = (np.abs(y_true) + np.abs(y_pred)) / 2.0
+    # Handle zeros: if both are zero, smape is 0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        res = numerator / denominator
+    if res.ndim == 0:
+        if np.isnan(res):
+            return 0.0
+        return float(res) * 100.0
+    res[np.isnan(res)] = 0.0
+    return np.mean(res) * 100.0
 
 def train_forecast():
-    # Load synthetic data
+    # 1. Load synthetic data
     data_path = os.path.join("data", "raw", "synthetic_call_center.csv")
     if not os.path.exists(data_path):
         raise FileNotFoundError(f"Synthetic data not found at {data_path}. Please run data_generator.py first.")
         
     df = pd.read_csv(data_path)
     
-    # Feature engineering
+    # 2. Sort chronologically
+    df['datetime'] = pd.to_datetime(df['date']) + pd.to_timedelta(df['hour'], unit='h')
+    df = df.sort_values(by=['datetime', 'channel', 'skill_group']).reset_index(drop=True)
+    
+    # 3. Feature engineering (No future leakage)
     df['is_weekend'] = df['day_of_week'].isin(['Saturday', 'Sunday']).astype(int)
     
-    # We will one-hot encode categorical features
+    # Construct lags properly grouped by series
+    # Dataset is hourly, so lag 24 is yesterday same hour, lag 168 is last week same hour
+    df['lag_24'] = df.groupby(['channel', 'skill_group'])['calls_received'].shift(24)
+    df['lag_168'] = df.groupby(['channel', 'skill_group'])['calls_received'].shift(168)
+    
+    # Rolling mean 24 (historical only, shift by 1 to not include current hour)
+    df['rolling_mean_24'] = df.groupby(['channel', 'skill_group'])['calls_received'] \
+                              .transform(lambda x: x.shift(1).rolling(24, min_periods=1).mean())
+                              
+    # Drop NaNs caused by lagging
+    df = df.dropna(subset=['lag_168']).reset_index(drop=True)
+    
+    # Baseline predictions (Seasonal Naive = lag_168)
+    df['baseline_pred'] = df['lag_168']
+    
+    # 4. Chronological Splits (70% Train, 15% Val, 15% Test)
+    unique_dates = df['date'].unique()
+    n_dates = len(unique_dates)
+    
+    train_end = int(n_dates * 0.7)
+    val_end = int(n_dates * 0.85)
+    
+    train_dates = unique_dates[:train_end]
+    val_dates = unique_dates[train_end:val_end]
+    test_dates = unique_dates[val_end:]
+    
+    def assign_split(d):
+        if d in train_dates: return 'train'
+        elif d in val_dates: return 'val'
+        else: return 'test'
+        
+    df['split'] = df['date'].apply(assign_split)
+    
+    # 5. One-hot encoding
     categorical_cols = ['day_of_week', 'channel', 'skill_group']
     df_encoded = pd.get_dummies(df, columns=categorical_cols)
     
-    # Define features and target
     target = 'calls_received'
-    exclude = ['date', 'interval', 'avg_handle_time', 'agents_available', 'sla_achieved', target]
+    exclude = ['date', 'datetime', 'interval', 'avg_handle_time', 'agents_available', 
+               'sla_achieved', target, 'split', 'baseline_pred']
     features = [c for c in df_encoded.columns if c not in exclude]
     
-    X = df_encoded[features]
-    y = df_encoded[target]
+    # 6. Prepare datasets
+    train_mask = df_encoded['split'] == 'train'
+    val_mask = df_encoded['split'] == 'val'
+    test_mask = df_encoded['split'] == 'test'
     
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, y_train = df_encoded[train_mask][features], df_encoded[train_mask][target]
+    X_val, y_val = df_encoded[val_mask][features], df_encoded[val_mask][target]
+    X_test, y_test = df_encoded[test_mask][features], df_encoded[test_mask][target]
     
-    # Train Random Forest Regressor
-    # We choose parameters that will yield MAE ~6.44 and R2 ~0.8578
-    model = RandomForestRegressor(
-        n_estimators=50,
-        max_depth=12,
-        min_samples_split=4,
-        random_state=42,
-        n_jobs=-1
-    )
+    # 7. Train Model
+    model = RandomForestRegressor(n_estimators=50, max_depth=10, min_samples_split=4, random_state=42, n_jobs=-1)
     model.fit(X_train, y_train)
     
-    # Predict and evaluate
-    y_pred = model.predict(X_test)
-    mae = mean_absolute_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
+    # 8. Evaluate Baseline and ML Model
+    splits = [('TRAIN', train_mask), ('VALIDATION', val_mask), ('TEST', test_mask)]
     
-    print(f"Model Training Completed.")
-    print(f"Mean Absolute Error (MAE): {mae:.4f} (Target: ~6.44)")
-    print(f"R² Score: {r2:.4f} (Target: ~0.8578)")
+    print("==================================================")
+    print("FORECASTING EVALUATION RESULTS (CHRONOLOGICAL)")
+    print("==================================================")
     
-    # Save files
+    for split_name, mask in splits:
+        y_true = df_encoded[mask][target]
+        y_base = df_encoded[mask]['baseline_pred']
+        y_pred = np.clip(model.predict(df_encoded[mask][features]), 0, None)
+        
+        # ML metrics
+        mae_ml = mean_absolute_error(y_true, y_pred)
+        rmse_ml = root_mean_squared_error(y_true, y_pred)
+        smape_ml = smape(y_true, y_pred)
+        
+        # Baseline metrics
+        mae_base = mean_absolute_error(y_true, y_base)
+        rmse_base = root_mean_squared_error(y_true, y_base)
+        smape_base = smape(y_true, y_base)
+        
+        print(f"\n--- {split_name} SET ---")
+        print(f"ML Model:       MAE={mae_ml:.4f}, RMSE={rmse_ml:.4f}, sMAPE={smape_ml:.2f}%")
+        print(f"Baseline (SNaive): MAE={mae_base:.4f}, RMSE={rmse_base:.4f}, sMAPE={smape_base:.2f}%")
+        
+        # Store predictions
+        df.loc[mask, 'predicted_calls'] = y_pred.round(2)
+        df.loc[mask, 'model'] = 'RandomForest'
+        df.loc[mask, 'baseline_calls'] = y_base.round(2)
+
+    # 9. Save models and results
     os.makedirs("models", exist_ok=True)
     with open(os.path.join("models", "forecasting_model.pkl"), "wb") as f:
         pickle.dump(model, f)
     with open(os.path.join("models", "feature_columns.pkl"), "wb") as f:
         pickle.dump(features, f)
         
-    # Generate 7-day forecast
-    print("Generating 7-day forecast...")
+    os.makedirs(os.path.join("data", "processed"), exist_ok=True)
+    
+    # Save the evaluation results
+    output_cols = ['date', 'hour', 'interval', 'channel', 'skill_group', 
+                   'calls_received', 'predicted_calls', 'baseline_calls', 'split', 'model']
+    df[output_cols].to_csv(os.path.join("data", "processed", "forecast_evaluation.csv"), index=False)
+    
+    # 10. Generate 7-day future forecast (for optimizer)
+    print("\nGenerating 7-day future forecast...")
     last_date = pd.to_datetime(df['date'].max())
     forecast_records = []
     
     channels = ["Voice", "Chat", "Email"]
     skills = ["Billing", "Technical", "Sales", "General"]
     
-    # Generate future dates
+    # To predict future properly, we need historical lags. 
+    # For a naive 7-day future, we can just grab the last 7 days of actuals.
+    # To keep it simple and runnable for optimizer without recursive prediction logic, 
+    # we'll build a future dataframe and map the lag_168 from the exact last week.
+    
+    last_7_days_mask = pd.to_datetime(df['date']) > (last_date - timedelta(days=7))
+    df_last_7 = df[last_7_days_mask].copy()
+    
     for i in range(1, 8):
         future_date = last_date + timedelta(days=i)
         date_str = future_date.strftime("%Y-%m-%d")
         day_name = future_date.strftime("%A")
         is_weekend = 1 if day_name in ["Saturday", "Sunday"] else 0
         
-        # Simple holiday flag for forecasting period
-        is_holiday = 0 # No holidays in next 7 days assumed
-        
         for hour in range(24):
             for channel in channels:
                 for skill in skills:
+                    # Find lag_168 exactly 7 days prior
+                    past_dt = future_date - timedelta(days=7)
+                    past_str = past_dt.strftime("%Y-%m-%d")
+                    past_row = df[(df['date'] == past_str) & (df['hour'] == hour) & 
+                                  (df['channel'] == channel) & (df['skill_group'] == skill)]
+                                  
+                    lag_24_val = 0
+                    lag_168_val = 0
+                    rolling_val = 0
+                    if not past_row.empty:
+                        lag_168_val = past_row['calls_received'].values[0]
+                        rolling_val = past_row['rolling_mean_24'].values[0] # Approx
+                        lag_24_val = lag_168_val # Very rough approx for future generation
+                        
                     forecast_records.append({
                         "date": date_str,
                         "day_of_week": day_name,
@@ -92,38 +188,26 @@ def train_forecast():
                         "interval": f"{hour:02d}:00-{(hour+1)%24:02d}:00",
                         "channel": channel,
                         "skill_group": skill,
-                        "holiday": is_holiday,
-                        "is_weekend": is_weekend
+                        "holiday": 0,
+                        "is_weekend": is_weekend,
+                        "lag_24": lag_24_val,
+                        "lag_168": lag_168_val,
+                        "rolling_mean_24": rolling_val
                     })
                     
     df_forecast = pd.DataFrame(forecast_records)
-    
-    # Encode forecast data
     df_fc_encoded = pd.get_dummies(df_forecast, columns=['day_of_week', 'channel', 'skill_group'])
     
-    # Align columns with training features
     for col in features:
         if col not in df_fc_encoded.columns:
             df_fc_encoded[col] = 0
             
     X_fc = df_fc_encoded[features]
-    
-    # Predict
     preds = model.predict(X_fc)
     df_forecast['predicted_calls'] = np.clip(preds, 0, None).round(2)
     
-    # Add confidence bands (using std of residuals on test set)
-    residuals = y_test - y_pred
-    std_residual = np.std(residuals)
-    
-    # Simulating margin of error (95% confidence interval)
-    df_forecast['lower_bound'] = np.clip(df_forecast['predicted_calls'] - 1.96 * std_residual, 0, None).round(2)
-    df_forecast['upper_bound'] = (df_forecast['predicted_calls'] + 1.96 * std_residual).round(2)
-    
-    os.makedirs(os.path.join("data", "processed"), exist_ok=True)
     df_forecast.to_csv(os.path.join("data", "processed", "forecast_results.csv"), index=False)
-    print(f"Forecast saved to data/processed/forecast_results.csv. Rows: {len(df_forecast)}")
+    print(f"Future forecast saved to data/processed/forecast_results.csv. Rows: {len(df_forecast)}")
 
 if __name__ == "__main__":
-    from datetime import timedelta
     train_forecast()
