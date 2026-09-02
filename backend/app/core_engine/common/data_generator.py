@@ -164,7 +164,10 @@ def generate_data(run_id: uuid.UUID = None):
             for j in range(start_block, start_block + 6):
                 availability_array[j] = "0"
 
-        availability_str = "".join(availability_array)
+        # Expand 24-hour daily availability to a full 168-hour weekly availability
+        weekly_availability_array = availability_array * 7
+
+        availability_str = "".join(weekly_availability_array)
 
         agent_dict = {
             "agent_id": f"AGT-{i:03d}",

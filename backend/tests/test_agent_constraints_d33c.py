@@ -41,7 +41,7 @@ def test_cpsat_enforces_availability():
     # The solver requires someone at hour 8. It must pick Agent 2.
     roster = [
         {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 40, "availability": "1"*8 + "0" + "1"*15},
-        {"agent_id": "AGT-002", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*24}
+        {"agent_id": "AGT-002", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*168}
     ]
     
     _setup_mock_data(run_id, roster)
@@ -68,8 +68,8 @@ def test_cpsat_enforces_max_weekly_hours():
     # AGT-001 has max 7 hours (cannot take an 8 hour shift).
     # AGT-002 has max 8 hours (exactly enough for an 8 hour shift).
     roster = [
-        {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 7, "availability": "1"*24},
-        {"agent_id": "AGT-002", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 8, "availability": "1"*24}
+        {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 7, "availability": "1"*168},
+        {"agent_id": "AGT-002", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 8, "availability": "1"*168}
     ]
     
     _setup_mock_data(run_id, roster)
@@ -118,7 +118,7 @@ def test_zero_eligible_agents():
     # We need coverage at hour 8.
     # The only agent is NOT available at hour 8.
     roster = [
-        {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 40, "availability": "0"*24}
+        {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 40, "availability": "0"*168}
     ]
     
     _setup_mock_data(run_id, roster)
@@ -175,8 +175,8 @@ def test_skill_compatibility_preservation():
     
     # Need Tech coverage at hour 8.
     roster = [
-        {"agent_id": "AGT-SALES", "skills": "Sales", "wage": 10.0, "max_weekly_hours": 40, "availability": "1"*24},
-        {"agent_id": "AGT-TECH", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*24}
+        {"agent_id": "AGT-SALES", "skills": "Sales", "wage": 10.0, "max_weekly_hours": 40, "availability": "1"*168},
+        {"agent_id": "AGT-TECH", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*168}
     ]
     
     _setup_mock_data(run_id, roster)
@@ -196,9 +196,9 @@ def test_fully_available_agent():
     
     # Provide multiple agents with various capabilities
     roster = [
-        {"agent_id": "A1_FULL", "skills": "Tech", "wage": 20.0, "max_weekly_hours": 40, "availability": "1"*24},
+        {"agent_id": "A1_FULL", "skills": "Tech", "wage": 20.0, "max_weekly_hours": 40, "availability": "1"*168},
         {"agent_id": "A2_PARTIAL", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*12 + "0"*12},
-        {"agent_id": "A3_SHORT", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 4, "availability": "1"*24}
+        {"agent_id": "A3_SHORT", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 4, "availability": "1"*168}
     ]
     
     _setup_mock_data(run_id, roster)

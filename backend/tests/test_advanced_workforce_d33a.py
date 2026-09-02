@@ -11,71 +11,71 @@ def test_ft_pt_boundaries():
     """8. FT boundary, 9. PT boundary"""
     # FT boundary
     with pytest.raises(ValidationError, match="FT agents should typically have 35\\+ max weekly hours."):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=34, preferred_shift="morning", availability="1"*24)
-    RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=35, preferred_shift="morning", availability="1"*24)
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=34, preferred_shift="morning", availability="1"*168)
+    RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=35, preferred_shift="morning", availability="1"*168)
     
     # PT boundary
     with pytest.raises(ValidationError, match="PT agents should typically have < 35 max weekly hours."):
-        RosterAgent(agent_id="AGT-002", skills="Tech", wage=15, contract_type="PT", max_weekly_hours=35, preferred_shift="morning", availability="1"*24)
-    RosterAgent(agent_id="AGT-002", skills="Tech", wage=15, contract_type="PT", max_weekly_hours=34, preferred_shift="morning", availability="1"*24)
+        RosterAgent(agent_id="AGT-002", skills="Tech", wage=15, contract_type="PT", max_weekly_hours=35, preferred_shift="morning", availability="1"*168)
+    RosterAgent(agent_id="AGT-002", skills="Tech", wage=15, contract_type="PT", max_weekly_hours=34, preferred_shift="morning", availability="1"*168)
 
 def test_availability_validation():
-    """1. length 23, 2. length 25, 3. invalid characters"""
-    # 1. Invalid length 23
-    with pytest.raises(ValidationError, match="Availability must be exactly 24 characters long."):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*23)
+    """1. length 167, 2. length 169, 3. invalid characters"""
+    # 1. Invalid length 167
+    with pytest.raises(ValidationError, match="Availability must be exactly 168 characters long."):
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*167)
     
-    # 2. Invalid length 25
-    with pytest.raises(ValidationError, match="Availability must be exactly 24 characters long."):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*25)
+    # 2. Invalid length 169
+    with pytest.raises(ValidationError, match="Availability must be exactly 168 characters long."):
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*169)
         
     # 3. Invalid characters
     with pytest.raises(ValidationError, match="Availability must contain only 0s and 1s."):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*23 + "2")
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*167 + "2")
 
 def test_basic_field_validation():
     """4. invalid contract, 5. invalid wage, 6. invalid agent ID, 7. invalid max weekly hours"""
     # 4. Invalid contract type
     with pytest.raises(ValidationError):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="TEMP", max_weekly_hours=40, preferred_shift="morning", availability="1"*24)
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="TEMP", max_weekly_hours=40, preferred_shift="morning", availability="1"*168)
     
     # 5. Invalid wage (<= 0)
     with pytest.raises(ValidationError):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=0, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*24)
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=0, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*168)
         
     # 6. Invalid agent ID (empty)
     with pytest.raises(ValidationError):
-        RosterAgent(agent_id="", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*24)
+        RosterAgent(agent_id="", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*168)
         
     # 7. Invalid max weekly hours (0)
     with pytest.raises(ValidationError):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="PT", max_weekly_hours=0, preferred_shift="morning", availability="1"*24)
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="PT", max_weekly_hours=0, preferred_shift="morning", availability="1"*168)
 
 def test_preferred_shift_enums():
     """10. all preferred shift enum values"""
     for shift in ["morning", "afternoon", "evening", "flexible"]:
-        agent = RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift=shift, availability="1"*24)
+        agent = RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift=shift, availability="1"*168)
         assert agent.preferred_shift == shift
         
     with pytest.raises(ValidationError):
-        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="night", availability="1"*24)
+        RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="night", availability="1"*168)
 
 def test_preferred_shift_independent_of_availability():
     """11. preferred_shift independent of availability"""
     # Agent A
-    agent_a = RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*24)
+    agent_a = RosterAgent(agent_id="AGT-001", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="morning", availability="1"*168)
     assert agent_a.preferred_shift == "morning"
-    assert agent_a.availability == "1"*24
+    assert agent_a.availability == "1"*168
     
     # Agent B
-    agent_b = RosterAgent(agent_id="AGT-002", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="evening", availability="1"*12 + "0"*6 + "1"*6)
+    agent_b = RosterAgent(agent_id="AGT-002", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="evening", availability=("1"*12 + "0"*6 + "1"*6)*7)
     assert agent_b.preferred_shift == "evening"
-    assert agent_b.availability == "1"*12 + "0"*6 + "1"*6
+    assert agent_b.availability == ("1"*12 + "0"*6 + "1"*6)*7
     
     # Agent C
-    agent_c = RosterAgent(agent_id="AGT-003", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="flexible", availability="0"*6 + "1"*12 + "0"*6)
+    agent_c = RosterAgent(agent_id="AGT-003", skills="Tech", wage=15, contract_type="FT", max_weekly_hours=40, preferred_shift="flexible", availability=("0"*6 + "1"*12 + "0"*6)*7)
     assert agent_c.preferred_shift == "flexible"
-    assert agent_c.availability == "0"*6 + "1"*12 + "0"*6
+    assert agent_c.availability == ("0"*6 + "1"*12 + "0"*6)*7
 
 def test_roster_generation_quality():
     """12-14. Validate generated data quality, 17. Can be validated through RosterAgent."""
@@ -91,13 +91,13 @@ def test_roster_generation_quality():
     assert set(df['contract_type'].unique()).issubset({"FT", "PT"})
     
     # 14. valid generated availability
-    assert all(df['availability'].astype(str).str.match(r"^[01]{24}$"))
+    assert all(df['availability'].astype(str).str.match(r"^[01]{168}$"))
     
     # 17. Validate every row via RosterAgent
     for _, row in df.iterrows():
         # Will raise ValidationError if invalid
         # ensure availability is parsed as string even if mostly 1s and 0s
-        availability_str = str(row['availability']).zfill(24) if len(str(row['availability'])) < 24 else str(row['availability'])
+        availability_str = str(row['availability']).zfill(168) if len(str(row['availability'])) < 168 else str(row['availability'])
         
         RosterAgent(
             agent_id=row['agent_id'],

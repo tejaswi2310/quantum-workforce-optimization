@@ -14,9 +14,9 @@ class RosterAgent(BaseModel):
     @field_validator("availability")
     @classmethod
     def validate_availability(cls, v):
-        if len(v) != 24:
-            raise ValueError("Availability must be exactly 24 characters long.")
-        if not re.match(r"^[01]{24}$", v):
+        if len(v) != 168:
+            raise ValueError("Availability must be exactly 168 characters long.")
+        if not re.match(r"^[01]{168}$", v):
             raise ValueError("Availability must contain only 0s and 1s.")
         return v
 
