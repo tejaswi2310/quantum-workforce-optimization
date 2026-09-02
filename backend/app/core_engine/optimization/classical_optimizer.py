@@ -120,40 +120,16 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     # 3. Define Shift Templates
     # Each template provides a 24-hour binary array for work (x)
     # 0 = not working, 1 = working
-    shift_templates = []
+    from app.schemas.shift import get_default_shift_configs, generate_shifts
     
-    # Template 0: No shift
-    shift_templates.append({
-        'name': 'None',
-        'x': [0]*24,
-        'hours': 0,
-        'overtime_hours': 0
-    })
+    # D3.3-B: Dynamic Shift Configuration
+    # We use the default configs here to preserve identical backward compatibility
+    # with the existing classical CP-SAT schedule architecture.
+    configs = get_default_shift_configs()
+    generated_templates = generate_shifts(configs)
     
-    for start_h in range(24):
-        # Base shift: 8 hrs work + 1 hr break
-        x_base = [0]*24
-        for offset in range(9):
-            if offset != 4: # Break at hour 4
-                x_base[(start_h + offset) % 24] = 1
-        shift_templates.append({
-            'name': f'Base_Start_{start_h:02d}',
-            'x': x_base,
-            'hours': 8,
-            'overtime_hours': 0
-        })
-        
-        # OT shift (+1 hr)
-        x_ot1 = [0]*24
-        for offset in range(10):
-            if offset != 4:
-                x_ot1[(start_h + offset) % 24] = 1
-        shift_templates.append({
-            'name': f'OT1_Start_{start_h:02d}',
-            'x': x_ot1,
-            'hours': 8,
-            'overtime_hours': 1
-        })
+    # Convert to standard dict structure for the solver
+    shift_templates = [t.model_dump() for t in generated_templates]
 
     # 4. Initialize CP-SAT Model
     model = cp_model.CpModel()
