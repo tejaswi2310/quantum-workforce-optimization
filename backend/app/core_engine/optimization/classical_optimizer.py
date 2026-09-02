@@ -91,7 +91,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         else:
             raise FileNotFoundError(f"Roster not found at {roster_path}. Please run data_generator.py first.")
             
-    df_roster = pd.read_csv(roster_path)
+    df_roster = pd.read_csv(roster_path, dtype={'availability': str})
     if df_roster.empty:
         raise ValueError(f"Roster at {roster_path} is empty.")
         
@@ -106,42 +106,67 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         if agent_wage <= 0:
             raise ValueError(f"Invalid wage for agent {agent_id}: {agent_wage}")
             
+        availability_str = str(row.get('availability', '1'*24))
+        max_hours = int(row.get('max_weekly_hours', 40))
+
         agents.append({
             'id': agent_id,
             'skills': agent_skills,
-            'wage': agent_wage
+            'wage': agent_wage,
+            'availability': availability_str,
+            'max_weekly_hours': max_hours
         })
-        
+
     # Validation: Enforce unique IDs
     agent_ids = [a['id'] for a in agents]
     if len(agent_ids) != len(set(agent_ids)):
         raise ValueError("Duplicate agent IDs found in the roster.")
-        
+
     # 3. Define Shift Templates
     # Each template provides a 24-hour binary array for work (x)
     # 0 = not working, 1 = working
     from app.schemas.shift import get_default_shift_configs, generate_shifts
-    
+
     # D3.3-B: Dynamic Shift Configuration
     # We use the default configs here to preserve identical backward compatibility
     # with the existing classical CP-SAT schedule architecture.
     configs = get_default_shift_configs()
     generated_templates = generate_shifts(configs)
-    
+
     # Convert to standard dict structure for the solver
     shift_templates = [t.model_dump() for t in generated_templates]
 
     # 4. Initialize CP-SAT Model
     model = cp_model.CpModel()
-    
+
     # x[i, s] = 1 if agent i takes shift template s
     x = {}
     for i, agent in enumerate(agents):
         for s in range(len(shift_templates)):
+            template = shift_templates[s]
             x[(i, s)] = model.NewBoolVar(f'x_{i}_{s}')
-            
+
+            # Phase 2: Agent Availability Constraint
+            # If the shift requires work at an hour the agent is unavailable, prohibit the assignment.
+            if template['name'] != 'None':
+                can_work = True
+                for t in range(24):
+                    if template['x'][t] == 1 and agent['availability'][t] == '0':
+                        can_work = False
+                        break
+                if not can_work:
+                    model.Add(x[(i, s)] == 0)
+
         # Agent can only take exactly one shift
         model.AddExactlyOne([x[(i, s)] for s in range(len(shift_templates))])
+
+        # Phase 4 & 5: Maximum Weekly Hours Constraint
+        # Sum of all assigned payable hours across all shifts must not exceed max_weekly_hours.
+        assigned_payable_hours = sum(
+            x[(i, s)] * (shift_templates[s]['hours'] + shift_templates[s]['overtime_hours'])
+            for s in range(len(shift_templates))
+        )
+        model.Add(assigned_payable_hours <= agent['max_weekly_hours'])
         
     # y[i, k, t] = 1 if agent i is working on skill k at hour t
     y = {}
