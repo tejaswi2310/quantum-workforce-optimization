@@ -3,14 +3,24 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db
 from app.models.models import Project, User, OptimizationRun
 from app.dependencies import get_current_active_user
+from app.services.storage_service import StorageService
 import os
 import pandas as pd
 import math
 import uuid
 
-router = APIRouter(prefix="/api/v1/projects/{project_id}/dashboard", tags=["dashboard"])
+def sanitize_float(val):
+    if val is None:
+        return None
+    try:
+        fval = float(val)
+        if math.isnan(fval) or math.isinf(fval):
+            return None
+        return fval
+    except (ValueError, TypeError):
+        return None
 
-from app.services.storage_service import StorageService
+router = APIRouter(prefix="/api/v1/projects/{project_id}/dashboard", tags=["dashboard"])
 
 @router.get("/metrics")
 def get_dashboard_metrics(
@@ -48,10 +58,20 @@ def get_dashboard_metrics(
         
     if queue_path.exists():
         df_queue = pd.read_csv(queue_path)
-        avg_sla = float(df_queue['sla_percent'].mean())
-        min_sla = float(df_queue['sla_percent'].min())
-        avg_asa = float(df_queue['asa_seconds'].mean())
-        total_calls = int(df_queue['calls'].sum())
+        avg_sla = sanitize_float(df_queue['sla_percent'].mean())
+        if avg_sla is None:
+            avg_sla = 0.0
+        min_sla = sanitize_float(df_queue['sla_percent'].min())
+        if min_sla is None:
+            min_sla = 0.0
+        avg_asa = sanitize_float(df_queue['asa_seconds'].mean())
+        if avg_asa is None:
+            avg_asa = 0.0
+        total_calls = sanitize_float(df_queue['calls'].sum())
+        if total_calls is None:
+            total_calls = 0
+        else:
+            total_calls = int(total_calls)
         
     return {
         "success": True,
@@ -88,10 +108,12 @@ def get_dashboard_analytics(
         df_queue = pd.read_csv(queue_path)
         for _, row in df_queue.iterrows():
             calls_per_hour.append({
+                "date": row.get('date', 'Unknown'),
                 "hour": int(row['hour']),
-                "calls": float(row['calls']),
+                "absolute_hour": int(row.get('absolute_hour', row['hour'])),
+                "calls": sanitize_float(row['calls']),
                 "agents": int(row['agents']),
-                "sla": float(row['sla_percent'])
+                "sla": sanitize_float(row['sla_percent'])
             })
             
     # Parse evaluation metrics if possible, else return None
@@ -181,7 +203,9 @@ def get_optimization_results(
     schedule = []
     for _, row in df_shifts.iterrows():
         schedule.append({
+            "date": row.get('date', 'Unknown'),
             "hour": f"{int(row['hour']):02d}:00",
+            "absolute_hour": int(row.get('absolute_hour', row['hour'])),
             "required": int(row['required_agents']),
             "scheduled": int(row['scheduled_agents']),
             "shortfall": int(row.get('shortfall', 0)),

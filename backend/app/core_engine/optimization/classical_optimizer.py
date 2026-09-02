@@ -28,11 +28,25 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
 
     df_forecast = pd.read_csv(forecast_path)
+
+    # Data Contract Validations
+    if 'date' not in df_forecast.columns or df_forecast['date'].isnull().any():
+        raise ValueError("Forecast missing required 'date' column or contains null dates.")
+    if 'hour' not in df_forecast.columns or df_forecast['hour'].isnull().any():
+        raise ValueError("Forecast missing required 'hour' column or contains null hours.")
+    if 'skill_group' not in df_forecast.columns or df_forecast['skill_group'].isnull().any():
+        raise ValueError("Forecast missing required 'skill_group' column or contains null skills.")
+
+    invalid_hours = df_forecast[~df_forecast['hour'].astype(int).between(0, 23)]
+    if not invalid_hours.empty:
+        raise ValueError("Forecast contains invalid hour(s) outside 0..23 range.")
+
     unique_dates = sorted(df_forecast['date'].unique())
     if len(unique_dates) < 7:
         raise ValueError(f"Forecast must contain at least 7 days, found {len(unique_dates)}.")
     week_dates = unique_dates[:7]
     df_week = df_forecast[df_forecast['date'].isin(week_dates)].copy()
+    df_week['hour'] = df_week['hour'].astype(int)
     df_week = df_week.sort_values(by=['date', 'hour']).reset_index(drop=True)
 
     date_hours = df_week[['date', 'hour']].drop_duplicates()
@@ -42,32 +56,40 @@ def run_classical_optimization(run_id: uuid.UUID = None):
 
 
     # 1. Aggregate demand by skill and hour
+    # P0-B FIX: Pool workload by skill group BEFORE calculating Erlang-C
+    df_pooled = df_week.groupby(['date', 'hour', 'interval', 'skill_group'], as_index=False)['predicted_calls'].sum()
+
     aht = 300
     interval_seconds = 3600
 
     validation_results = []
-    required_agents = []
+    demand = {}
+    skills = df_week['skill_group'].unique()
+    for k in skills:
+        for t in range(168):
+            demand[(k, t)] = 0
 
-    for idx, row in df_week.iterrows():
+    for idx, row in df_pooled.iterrows():
         calls = row['predicted_calls']
         c, A, achieved_sla, p_w = required_agents_for_sla(
             calls, aht, interval_seconds, TARGET_SLA, TARGET_WAIT_SECONDS
         )
-        required_agents.append(c)
 
         # Check minimality if c > 0
-        minimumity_check = "PASS"
+        minimality_check = "PASS"
         previous_agents_sla = 0.0
         if c > max(1, int(math.floor(A))):
             prev_c = c - 1
             prev_p_w = erlang_c(prev_c, A)
             previous_agents_sla = 1.0 - prev_p_w * math.exp(-(prev_c - A) * TARGET_WAIT_SECONDS / aht)
             if previous_agents_sla >= TARGET_SLA:
-                minimumity_check = "FAIL"
+                minimality_check = "FAIL"
         elif c > 0 and c <= A:
-            minimumity_check = "FAIL (Unstable)"
+            minimality_check = "FAIL (Unstable)"
 
         validation_results.append({
+            'date': row['date'],
+            'hour': row['hour'],
             'interval': row['interval'],
             'skill_group': row['skill_group'],
             'predicted_calls': calls,
@@ -78,23 +100,14 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             'target_sla': TARGET_SLA,
             'achieved_sla': achieved_sla,
             'previous_agents_sla': previous_agents_sla,
-            'minimumity_check': minimumity_check
+            'minimality_check': minimality_check
         })
 
-    df_week['required_agents'] = required_agents
-
-    pd.DataFrame(validation_results).to_csv(storage.result_path("erlang_requirement_validation.csv"), index=False)
-
-    demand = {}
-    skills = df_week['skill_group'].unique()
-    for k in skills:
-        for t in range(168):
-            demand[(k, t)] = 0
-
-    for idx, row in df_week.iterrows():
         k = row['skill_group']
         t = date_to_day_idx[row['date']] * 24 + row['hour']
-        demand[(k, t)] += int(row['required_agents'])
+        demand[(k, t)] += int(c)
+
+    pd.DataFrame(validation_results).to_csv(storage.result_path("erlang_requirement_validation.csv"), index=False)
 
     # 2. Setup Agents and Skills from Roster
     roster_path = storage.data_path("raw/synthetic_roster.csv")
@@ -120,7 +133,16 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         if agent_wage <= 0:
             raise ValueError(f"Invalid wage for agent {agent_id}: {agent_wage}")
 
-        availability_str = str(row.get('availability', '1'*24))
+        raw_avail = str(row.get('availability', '1'*168))
+        if len(raw_avail) == 24:
+            availability_str = raw_avail * 7
+        elif len(raw_avail) > 168:
+            availability_str = raw_avail[:168]
+        elif len(raw_avail) == 168:
+            availability_str = raw_avail
+        else:
+            raise ValueError(f"Agent {agent_id} has malformed availability string of length {len(raw_avail)}. Must be exactly 24 or 168 characters.")
+
         max_hours = int(row.get('max_weekly_hours', 40))
 
         agents.append({
@@ -276,7 +298,8 @@ def run_classical_optimization(run_id: uuid.UUID = None):
 
     # 6. Solve
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 10.0
+    solver.parameters.max_time_in_seconds = 60.0
+    solver.parameters.num_search_workers = 8
     solver.parameters.log_search_progress = True
     status = solver.Solve(model)
 

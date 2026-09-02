@@ -50,10 +50,11 @@ def run_shift_optimization(run_id: uuid.UUID = None):
     
     # 2. Hourly coverage audit
     # Build a timeline from the shifts file directly to ensure it matches the classical optimizer claim
-    timeline = {h: 0 for h in range(24)}
+    timeline = {t: 0 for t in range(168)}
     total_cost = 0.0
     for _, row in df_shifts.iterrows():
         shift_name = row['shift_name']
+        d_idx = int(row['day_index'])
         total_cost += float(row['cost'])
         
         if 'Base' in shift_name:
@@ -69,17 +70,24 @@ def run_shift_optimization(run_id: uuid.UUID = None):
         # Work exactly duration hours minus hour 4 for break
         for offset in range(duration):
             if offset != 4:
-                timeline[(start_hour + offset) % 24] += 1
+                # Map overnight shifts into the absolute timeline.
+                absolute_hour = d_idx * 24 + start_hour + offset
+                # Only log within the 168-hour boundary (matching optimizer logic)
+                if absolute_hour < 168:
+                    timeline[absolute_hour] += 1
                 
     hourly_coverage = []
     coverage_pass = True
     
     for idx, row in df_hourly.iterrows():
         h = int(row['hour'])
+        t = int(row['absolute_hour'])
+        d_str = row['date']
+        d_idx = int(row.get('day_of_week', t // 24))
         req = int(row['required_agents'])
         
         # We use the independent timeline to verify
-        cov = timeline[h]
+        cov = timeline[t]
         
         shortfall = max(0, req - cov)
         excess = max(0, cov - req)
@@ -89,8 +97,10 @@ def run_shift_optimization(run_id: uuid.UUID = None):
             coverage_pass = False
             
         hourly_coverage.append({
-            'date': '2026-01-01',  # Placeholder for first day
+            'date': d_str,
+            'day_of_week': d_idx,
             'hour': h,
+            'absolute_hour': t,
             'interval': f"{h:02d}:00-{(h+1)%24:02d}:00",
             'required_agents': req,
             'scheduled_agents': cov,
@@ -101,7 +111,7 @@ def run_shift_optimization(run_id: uuid.UUID = None):
         })
         
     print(f"Total Computed Payroll Cost: ${total_cost:.2f}")
-    print(f"24/24 Hour Coverage Verification: {'PASS' if coverage_pass else 'FAIL'}")
+    print(f"168/168 Hour Coverage Verification: {'PASS' if coverage_pass else 'FAIL'}")
     
     df_out_shifts = pd.DataFrame(hourly_coverage)
     df_out_shifts.to_csv(storage.result_path("shift_schedule.csv"), index=False)

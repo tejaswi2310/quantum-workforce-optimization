@@ -81,12 +81,14 @@ def run_queue_simulation(run_id: uuid.UUID = None):
     lowest_sla = 100.0
     all_pass = True
 
-    print("Running Erlang C Queue Validation for 24 hours:")
-    print(f"{'Hour':<6}{'Calls':<8}{'Sched':<8}{'Req':<8}{'Traffic':<10}{'SLA %':<10}{'ASA (s)':<10}{'Status':<12}")
-    print("-" * 75)
+    print("Running Erlang C Queue Validation for 168 hours:")
+    print(f"{'Day':<12}{'Hour':<6}{'Calls':<8}{'Sched':<8}{'Req':<8}{'Traffic':<10}{'SLA %':<10}{'ASA (s)':<10}{'Status':<12}")
+    print("-" * 87)
 
     for idx, row in df.iterrows():
         hour = int(row['hour'])
+        t = int(row.get('absolute_hour', idx))
+        d_str = row.get('date', 'Unknown')
         calls = float(row['calls'])
         scheduled_agents = int(row['scheduled_agents'])
         required_agents = int(row.get('required_agents', scheduled_agents))
@@ -157,7 +159,9 @@ def run_queue_simulation(run_id: uuid.UUID = None):
                 lowest_sla = sla_percent
 
         results.append({
+            "date": d_str,
             "hour": hour,
+            "absolute_hour": t,
             "interval": f"{hour:02d}:00-{(hour+1)%24:02d}:00",
             "calls": calls,
             "scheduled_agents": sim_agents,
@@ -175,14 +179,14 @@ def run_queue_simulation(run_id: uuid.UUID = None):
 
         asa_str = f"{asa:.2f}" if asa is not None else "N/A"
         sla_str = f"{sla_percent:.2f}" if sla_percent is not None else "N/A"
-        print(f"{hour:<6}{calls:<8.1f}{sim_agents:<8}{required_agents:<8}{A:<10.2f}{sla_str:<10}{asa_str:<10}{metric_validity:<12}")
+        print(f"{d_str:<12}{hour:<6}{calls:<8.1f}{sim_agents:<8}{required_agents:<8}{A:<10.2f}{sla_str:<10}{asa_str:<10}{metric_validity:<12}")
 
     df_validation = pd.DataFrame(results)
     df_validation.to_csv(storage.result_path("queue_validation_results.csv"), index=False)
 
-    print("-" * 75)
+    print("-" * 87)
     print(f"Queue validation completed.")
-    print(f"All 24 Hours PASS: {'YES' if all_pass else 'NO'}")
+    print(f"All 168 Hours PASS: {'YES' if all_pass else 'NO'}")
     print(f"Lowest SLA: {lowest_sla:.2f}%")
 
 if __name__ == "__main__":
