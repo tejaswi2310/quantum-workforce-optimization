@@ -5,6 +5,7 @@ ortools>=9.9.3963
 qiskit>=1.1.0
 qiskit-optimization>=0.6.1
 qiskit-aer>=0.14.1
+qiskit-algorithms==0.4.0
 streamlit>=1.35.0
 matplotlib>=3.8.0
 pydantic-settings>=2.3.1
