@@ -26,25 +26,35 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             forecast_path = global_path
         else:
             raise FileNotFoundError(f"Forecast results not found at {forecast_path}.")
-        
+
     df_forecast = pd.read_csv(forecast_path)
-    first_day = df_forecast['date'].min()
-    df_day = df_forecast[df_forecast['date'] == first_day].copy()
-    
+    unique_dates = sorted(df_forecast['date'].unique())
+    if len(unique_dates) < 7:
+        raise ValueError(f"Forecast must contain at least 7 days, found {len(unique_dates)}.")
+    week_dates = unique_dates[:7]
+    df_week = df_forecast[df_forecast['date'].isin(week_dates)].copy()
+    df_week = df_week.sort_values(by=['date', 'hour']).reset_index(drop=True)
+
+    date_hours = df_week[['date', 'hour']].drop_duplicates()
+    if len(date_hours) != 168:
+        raise ValueError(f"Forecast must contain exactly 168 hours for the week. Found {len(date_hours)}.")
+    date_to_day_idx = {d: i for i, d in enumerate(week_dates)}
+
+
     # 1. Aggregate demand by skill and hour
     aht = 300
     interval_seconds = 3600
-    
+
     validation_results = []
     required_agents = []
-    
-    for idx, row in df_day.iterrows():
+
+    for idx, row in df_week.iterrows():
         calls = row['predicted_calls']
         c, A, achieved_sla, p_w = required_agents_for_sla(
             calls, aht, interval_seconds, TARGET_SLA, TARGET_WAIT_SECONDS
         )
         required_agents.append(c)
-        
+
         # Check minimality if c > 0
         minimumity_check = "PASS"
         previous_agents_sla = 0.0
@@ -56,7 +66,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
                 minimumity_check = "FAIL"
         elif c > 0 and c <= A:
             minimumity_check = "FAIL (Unstable)"
-            
+
         validation_results.append({
             'interval': row['interval'],
             'skill_group': row['skill_group'],
@@ -70,18 +80,22 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             'previous_agents_sla': previous_agents_sla,
             'minimumity_check': minimumity_check
         })
-        
-    df_day['required_agents'] = required_agents
-    
+
+    df_week['required_agents'] = required_agents
+
     pd.DataFrame(validation_results).to_csv(storage.result_path("erlang_requirement_validation.csv"), index=False)
-    
+
     demand = {}
-    skills = df_day['skill_group'].unique()
+    skills = df_week['skill_group'].unique()
     for k in skills:
-        for t in range(24):
-            val = df_day[(df_day['skill_group'] == k) & (df_day['hour'] == t)]['required_agents'].sum()
-            demand[(k, t)] = int(val)
-            
+        for t in range(168):
+            demand[(k, t)] = 0
+
+    for idx, row in df_week.iterrows():
+        k = row['skill_group']
+        t = date_to_day_idx[row['date']] * 24 + row['hour']
+        demand[(k, t)] += int(row['required_agents'])
+
     # 2. Setup Agents and Skills from Roster
     roster_path = storage.data_path("raw/synthetic_roster.csv")
     if not os.path.exists(roster_path):
@@ -90,22 +104,22 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             roster_path = global_roster_path
         else:
             raise FileNotFoundError(f"Roster not found at {roster_path}. Please run data_generator.py first.")
-            
+
     df_roster = pd.read_csv(roster_path, dtype={'availability': str})
     if df_roster.empty:
         raise ValueError(f"Roster at {roster_path} is empty.")
-        
+
     agents = []
     for _, row in df_roster.iterrows():
         agent_id = str(row['agent_id'])
         if not agent_id:
             raise ValueError("Found agent with empty ID.")
-        
+
         agent_skills = str(row['skills']).split('|')
         agent_wage = float(row['wage'])
         if agent_wage <= 0:
             raise ValueError(f"Invalid wage for agent {agent_id}: {agent_wage}")
-            
+
         availability_str = str(row.get('availability', '1'*24))
         max_hours = int(row.get('max_weekly_hours', 40))
 
@@ -139,163 +153,205 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     # 4. Initialize CP-SAT Model
     model = cp_model.CpModel()
 
-    # x[i, s] = 1 if agent i takes shift template s
+    # Precompute working absolute hours for each template on each day
+    def get_shift_working_hours(template, day_index):
+        if template['name'] == 'None':
+            return []
+        abs_start = day_index * 24 + template['start_hour']
+        wh = []
+        for offset in range(template['duration_hours']):
+            # Check if this offset is a working hour by looking at the 24h wrapped pattern in 'x'
+            if template['x'][(template['start_hour'] + offset) % 24] == 1:
+                h = abs_start + offset
+                if h < 168:
+                    wh.append(h)
+        return wh
+
+    shift_working_hours = {}
+    for d in range(7):
+        for s in range(len(shift_templates)):
+            shift_working_hours[(d, s)] = get_shift_working_hours(shift_templates[s], d)
+
+    # x[i, d, s] = 1 if agent i takes shift template s on day d
     x = {}
     for i, agent in enumerate(agents):
-        for s in range(len(shift_templates)):
-            template = shift_templates[s]
-            x[(i, s)] = model.NewBoolVar(f'x_{i}_{s}')
+        for d in range(7):
+            for s in range(len(shift_templates)):
+                x[(i, d, s)] = model.NewBoolVar(f'x_{i}_{d}_{s}')
 
-            # Phase 2: Agent Availability Constraint
-            # If the shift requires work at an hour the agent is unavailable, prohibit the assignment.
-            if template['name'] != 'None':
-                can_work = True
-                for t in range(24):
-                    if template['x'][t] == 1 and agent['availability'][t] == '0':
-                        can_work = False
-                        break
-                if not can_work:
-                    model.Add(x[(i, s)] == 0)
+                working_hours = shift_working_hours[(d, s)]
+                if working_hours:
+                    # Agent Availability Constraint
+                    can_work = all(agent['availability'][t] == '1' for t in working_hours)
+                    if not can_work:
+                        model.Add(x[(i, d, s)] == 0)
 
-        # Agent can only take exactly one shift
-        model.AddExactlyOne([x[(i, s)] for s in range(len(shift_templates))])
+            # Agent can only take exactly one shift per day (including None)
+            model.AddExactlyOne([x[(i, d, s)] for s in range(len(shift_templates))])
 
-        # Phase 4 & 5: Maximum Weekly Hours Constraint
-        # Sum of all assigned payable hours across all shifts must not exceed max_weekly_hours.
+        # Maximum Weekly Hours Constraint
         assigned_payable_hours = sum(
-            x[(i, s)] * (shift_templates[s]['hours'] + shift_templates[s]['overtime_hours'])
-            for s in range(len(shift_templates))
+            x[(i, d, s)] * (shift_templates[s]['hours'] + shift_templates[s]['overtime_hours'])
+            for d in range(7) for s in range(len(shift_templates))
         )
         model.Add(assigned_payable_hours <= agent['max_weekly_hours'])
-        
-    # y[i, k, t] = 1 if agent i is working on skill k at hour t
+
+        # Cross-day Overlap Prevention (an agent works at most 1 shift at any absolute hour t)
+        for t in range(168):
+            shifts_at_t = []
+            d_curr = t // 24
+            days_to_check = [d_curr, d_curr - 1] if d_curr > 0 else [d_curr]
+            for d in days_to_check:
+                for s in range(len(shift_templates)):
+                    if t in shift_working_hours[(d, s)]:
+                        shifts_at_t.append(x[(i, d, s)])
+            if len(shifts_at_t) > 1:
+                model.AddAtMostOne(shifts_at_t)
+
+    # y[i, k, t] = 1 if agent i is working on skill k at absolute hour t
     y = {}
     for i, agent in enumerate(agents):
-        for t in range(24):
+        for t in range(168):
             for k in skills:
                 y[(i, k, t)] = model.NewBoolVar(f'y_{i}_{k}_{t}')
-                # If agent doesn't have the skill, they can't answer it
                 if k not in agent['skills']:
                     model.Add(y[(i, k, t)] == 0)
-                    
-            # At any hour t, an agent can answer at most 1 skill
+
             model.AddAtMostOne([y[(i, k, t)] for k in skills])
-            
-            # Agent can only answer a skill at hour t if they are working at hour t
-            is_working_at_t = sum(x[(i, s)] for s in range(len(shift_templates)) if shift_templates[s]['x'][t] == 1)
-            model.Add(sum(y[(i, k, t)] for k in skills) == is_working_at_t)
+
+            d_curr = t // 24
+            days_to_check = [d_curr, d_curr - 1] if d_curr > 0 else [d_curr]
+            shifts_working_at_t = [
+                x[(i, d, s)]
+                for d in days_to_check
+                for s in range(len(shift_templates))
+                if t in shift_working_hours[(d, s)]
+            ]
+            model.Add(sum(y[(i, k, t)] for k in skills) == sum(shifts_working_at_t))
 
     # Shortfall and idle variables
     shortfall = {}
     idle = {}
     for k in skills:
-        for t in range(24):
+        for t in range(168):
             shortfall[(k, t)] = model.NewIntVar(0, 1000, f'shortfall_{k}_{t}')
             idle[(k, t)] = model.NewIntVar(0, 1000, f'idle_{k}_{t}')
-            
+
             assigned_total = sum(y[(i, k, t)] for i in range(len(agents)))
-            
+
             diff = model.NewIntVar(-1000, 1000, f'diff_{k}_{t}')
             model.Add(diff == assigned_total - demand[(k, t)])
             model.AddMaxEquality(idle[(k, t)], [0, diff])
-            
+
             neg_diff = model.NewIntVar(-1000, 1000, f'neg_diff_{k}_{t}')
             model.Add(neg_diff == demand[(k, t)] - assigned_total)
             model.AddMaxEquality(shortfall[(k, t)], [0, neg_diff])
-            
+
     # 5. Objective Function
     # We want to minimize cost but severely penalize shortfall
     w_cost = 1
     w_shortfall = 20000  # Must strictly exceed maximum shift cost to prevent understaffing
     w_idle = 5
-    
+
     total_cost_expr = []
     for i, agent in enumerate(agents):
         wage = agent['wage']
         ot_rate = wage * 1.5
-        for s in range(len(shift_templates)):
-            shift = shift_templates[s]
-            cost = int(round(wage * shift['hours'] + ot_rate * shift['overtime_hours']))
-            if cost > 0:
-                total_cost_expr.append(x[(i, s)] * cost)
-                
+        for d in range(7):
+            for s in range(len(shift_templates)):
+                shift = shift_templates[s]
+                cost = int(round(wage * shift['hours'] + ot_rate * shift['overtime_hours']))
+                if cost > 0:
+                    total_cost_expr.append(x[(i, d, s)] * cost)
+
     total_cost = sum(total_cost_expr)
-    total_shortfall = sum(shortfall[(k, t)] for k in skills for t in range(24))
-    total_idle = sum(idle[(k, t)] for k in skills for t in range(24))
-    
+    total_shortfall = sum(shortfall[(k, t)] for k in skills for t in range(168))
+    total_idle = sum(idle[(k, t)] for k in skills for t in range(168))
+
     model.Minimize(
-        w_cost * total_cost + 
-        w_shortfall * total_shortfall + 
+        w_cost * total_cost +
+        w_shortfall * total_shortfall +
         w_idle * total_idle
     )
-    
+
     # 6. Solve
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = 10.0
+    solver.parameters.log_search_progress = True
     status = solver.Solve(model)
-    
+
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         print(f"Solver Status: {solver.StatusName(status)}")
         print(f"Objective Value: {solver.ObjectiveValue()}")
-        
+
         # 7. Extract Results
         results = []
-        for t in range(24):
-            total_req = 0
-            total_sched = 0
-            for k in skills:
-                req = demand[(k, t)]
-                sched = sum(solver.Value(y[(i, k, t)]) for i in range(len(agents)))
-                total_req += req
-                total_sched += sched
-                
-            results.append({
-                'hour': t,
-                'interval': f"{t:02d}:00-{(t+1)%24:02d}:00",
-                'calls': df_day[df_day['hour'] == t]['predicted_calls'].sum(),
-                'required_agents': total_req,
-                'scheduled_agents': total_sched
-            })
-            
+        for d_idx, d_str in enumerate(week_dates):
+            for h in range(24):
+                t = d_idx * 24 + h
+                total_req = 0
+                total_sched = 0
+                for k in skills:
+                    req = demand[(k, t)]
+                    sched = sum(solver.Value(y[(i, k, t)]) for i in range(len(agents)))
+                    total_req += req
+                    total_sched += sched
+
+                calls_at_t = df_week[(df_week['date'] == d_str) & (df_week['hour'] == h)]['predicted_calls'].sum()
+
+                results.append({
+                    'date': d_str,
+                    'day_of_week': d_idx,
+                    'hour': h,
+                    'absolute_hour': t,
+                    'interval': f"{h:02d}:00-{(h+1)%24:02d}:00",
+                    'calls': calls_at_t,
+                    'required_agents': total_req,
+                    'scheduled_agents': total_sched
+                })
+
         # Post-process to assign specific agent IDs
         agent_shifts = []
         total_cost_calc = 0.0
-        
+
         for i, agent in enumerate(agents):
-            for s in range(len(shift_templates)):
-                if solver.Value(x[(i, s)]) == 1:
-                    template = shift_templates[s]
-                    if template['name'] != 'None':
-                        wage = agent['wage']
-                        ot_rate = wage * 1.5
-                        shift_cost = round(wage * template['hours'] + ot_rate * template['overtime_hours'], 2)
-                        total_cost_calc += shift_cost
-                        
-                        agent_shifts.append({
-                            'agent_id': agent['id'],
-                            'skills': '|'.join(agent['skills']),
-                            'shift_name': template['name'],
-                            'cost': shift_cost,
-                            'overtime': template['overtime_hours']
-                        })
-                    break
-                    
+            for d in range(7):
+                for s in range(len(shift_templates)):
+                    if solver.Value(x[(i, d, s)]) == 1:
+                        template = shift_templates[s]
+                        if template['name'] != 'None':
+                            wage = agent['wage']
+                            ot_rate = wage * 1.5
+                            shift_cost = round(wage * template['hours'] + ot_rate * template['overtime_hours'], 2)
+                            total_cost_calc += shift_cost
+
+                            agent_shifts.append({
+                                'agent_id': agent['id'],
+                                'day_index': d,
+                                'date': week_dates[d],
+                                'skills': '|'.join(agent['skills']),
+                                'shift_name': template['name'],
+                                'cost': shift_cost,
+                                'overtime': template['overtime_hours']
+                            })
+                        break
+
         # Apply total cost to all rows for reference (optional, better to put in shifts summary)
         for r in results:
             r['cost'] = total_cost_calc
-            
+
         df_results = pd.DataFrame(results)
         df_results.to_csv(storage.result_path("classical_optimization_schedule.csv"), index=False)
         print(f"Classical optimization completed and saved to {storage.result_path('classical_optimization_schedule.csv')}")
         df_shifts = pd.DataFrame(agent_shifts)
         df_shifts.to_csv(storage.result_path("agent_shifts_detailed.csv"), index=False)
-        
+
         # Save metrics for API response
-        total_shortfall_val = sum(solver.Value(shortfall[(k, t)]) for k in skills for t in range(24))
+        total_shortfall_val = sum(solver.Value(shortfall[(k, t)]) for k in skills for t in range(168))
         optimization_status = "OPTIMAL_WITH_SHORTFALL" if total_shortfall_val > 0 else "OPTIMAL"
         if status == cp_model.FEASIBLE:
             optimization_status = "FEASIBLE_WITH_SHORTFALL" if total_shortfall_val > 0 else "FEASIBLE"
-            
+
         metrics = {
             "optimization_status": optimization_status,
             "staffing_shortfall": int(total_shortfall_val),
@@ -303,7 +359,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         }
         with open(storage.result_path("optimization_metrics.json"), "w") as f:
             json.dump(metrics, f)
-            
+
     else:
         print("Solver failed to find a feasible solution.")
         metrics = {
@@ -313,6 +369,6 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         }
         with open(storage.result_path("optimization_metrics.json"), "w") as f:
             json.dump(metrics, f)
-        
+
 if __name__ == "__main__":
     run_classical_optimization()

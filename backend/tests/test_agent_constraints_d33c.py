@@ -17,17 +17,19 @@ def _setup_mock_data(run_id, roster_data, forecast_data=None):
     df_roster.to_csv(storage.data_path("raw/synthetic_roster.csv"), index=False)
     
     if forecast_data is None:
-        # Default single day forecast demanding 1 agent at hour 8
+        # Default 7-day forecast demanding 1 agent at hour 8 of day 0
         forecast_data = []
-        for h in range(24):
-            forecast_data.append({
-                'date': '2026-01-01',
-                'hour': h,
-                'interval': f"{h:02d}:00-{(h+1)%24:02d}:00",
-                'channel': 'Voice',
-                'skill_group': 'Tech',
-                'predicted_calls': 10 if h == 8 else 0
-            })
+        for d in range(7):
+            d_str = f"2026-01-0{d+1}"
+            for h in range(24):
+                forecast_data.append({
+                    'date': d_str,
+                    'hour': h,
+                    'interval': f"{h:02d}:00-{(h+1)%24:02d}:00",
+                    'channel': 'Voice',
+                    'skill_group': 'Tech',
+                    'predicted_calls': 10 if (d == 0 and h == 8) else 0
+                })
     
     df_forecast = pd.DataFrame(forecast_data)
     df_forecast.to_csv(storage.data_path("processed/forecast_results.csv"), index=False)
@@ -40,7 +42,7 @@ def test_cpsat_enforces_availability():
     # Agent 2 has skills and IS available at hour 8.
     # The solver requires someone at hour 8. It must pick Agent 2.
     roster = [
-        {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 40, "availability": "1"*8 + "0" + "1"*15},
+        {"agent_id": "AGT-001", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 40, "availability": ("1"*8 + "0" + "1"*15)*7},
         {"agent_id": "AGT-002", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*168}
     ]
     
@@ -197,7 +199,7 @@ def test_fully_available_agent():
     # Provide multiple agents with various capabilities
     roster = [
         {"agent_id": "A1_FULL", "skills": "Tech", "wage": 20.0, "max_weekly_hours": 40, "availability": "1"*168},
-        {"agent_id": "A2_PARTIAL", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": "1"*12 + "0"*12},
+        {"agent_id": "A2_PARTIAL", "skills": "Tech", "wage": 15.0, "max_weekly_hours": 40, "availability": ("1"*12 + "0"*12)*7},
         {"agent_id": "A3_SHORT", "skills": "Tech", "wage": 10.0, "max_weekly_hours": 4, "availability": "1"*168}
     ]
     
