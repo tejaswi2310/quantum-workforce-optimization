@@ -9,6 +9,7 @@ from app.models.models import Project, User, Report, OptimizationRun
 from app.schemas.report import ReportResponse, GenerateReportRequest
 from app.dependencies import get_current_active_user
 from app.services.storage_service import StorageService
+from app.services.kpi_service import calculate_baseline_cost, calculate_optimized_cost
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/reports", tags=["reports"])
 
@@ -29,23 +30,18 @@ def generate_report(
 
     storage = StorageService(latest_run.id)
     shifts_detailed_path = storage.result_path("agent_shifts_detailed.csv")
-    
-    opt_cost = 0.0
-    if os.path.exists(shifts_detailed_path):
-        df_det = pd.read_csv(shifts_detailed_path)
-        opt_cost = float(df_det['cost'].sum())
-        
-    # Naive peak-staffing calculation: schedule peak demand agents for all 168 hours (entire week)
-    naive_cost = 0.0
-    shift_schedule_path = storage.result_path("shift_schedule.csv")
-    if shift_schedule_path.exists():
-        df_shifts = pd.read_csv(shift_schedule_path)
-        peak_agents = int(df_shifts['required_agents'].max())
-        naive_cost = peak_agents * 168 * 15.0 # Wage = $15/hr
-        
-    weekly_savings = max(0, naive_cost - opt_cost)
-    daily_savings = weekly_savings / 7.0
-    annual_savings = daily_savings * 365
+
+    opt_cost = calculate_optimized_cost(latest_run.id)
+    naive_cost = calculate_baseline_cost(latest_run.id)
+
+    if opt_cost is not None and naive_cost is not None:
+        weekly_savings = max(0.0, naive_cost - opt_cost)
+        daily_savings = weekly_savings / 7.0
+        annual_savings = weekly_savings * 52.0  # 52-week projection from the 168-hour week
+    else:
+        weekly_savings = None
+        daily_savings = None
+        annual_savings = None
 
     reports_dir = storage.get_run_dir() / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -53,11 +49,14 @@ def generate_report(
     with open(file_path, "w") as f:
         f.write("Business Impact Report\n")
         f.write("========================\n")
-        f.write(f"Naive Cost: ${naive_cost:,.2f}\n")
-        f.write(f"Optimized Cost: ${opt_cost:,.2f}\n")
-        f.write(f"Weekly Savings: ${weekly_savings:,.2f}\n")
-        f.write(f"Daily Savings: ${daily_savings:,.2f}\n")
-        f.write(f"Annual Savings: ${annual_savings:,.2f}\n")
+
+        def fmt(v): return f"${v:,.2f}" if v is not None else "N/A"
+
+        f.write(f"Naive Cost: {fmt(naive_cost)}\n")
+        f.write(f"Optimized Cost: {fmt(opt_cost)}\n")
+        f.write(f"Weekly Savings: {fmt(weekly_savings)}\n")
+        f.write(f"Daily Savings: {fmt(daily_savings)}\n")
+        f.write(f"Annual Savings (Projected): {fmt(annual_savings)}\n")
 
     report = Report(
         project_id=project.id,
@@ -79,7 +78,7 @@ def get_reports(
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     return db.query(Report).filter(Report.project_id == project.id).all()
 
 @router.get("/{report_id}/download")
@@ -92,8 +91,8 @@ def download_report(
     report = db.query(Report).filter(Report.id == report_id, Report.project_id == project_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    
+
     if not os.path.exists(report.file_path):
         raise HTTPException(status_code=404, detail="Report file not found on disk")
-        
+
     return FileResponse(path=report.file_path, filename=os.path.basename(report.file_path), media_type='text/plain')
