@@ -8,6 +8,7 @@ import json
 import numpy as np
 import pandas as pd
 import uuid
+import time
 from app.services.storage_service import StorageService
 
 QISKIT_AVAILABLE = False
@@ -137,7 +138,9 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
                 Q[idx1, idx2] += 2 * alpha
 
     # Solve Classically (Exact brute force for exact parity benchmark)
+    t0_classical = time.perf_counter()
     classical_config, classical_val = solve_qubo_classical(Q, N)
+    classical_runtime = time.perf_counter() - t0_classical
 
     # Re-add the constant D_t^2 term to get actual objective value
     constant = alpha * (d_t0**2 + d_t1**2)
@@ -146,9 +149,12 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     # Solve with Qiskit
     quantum_config = None
     quantum_cost = None
+    quantum_runtime = 0.0
     quantum_status = "FAILED/SKIPPED"
     feasible = False
     shortfall = 0
+    overstaffing = 0
+    invalid_assignments = 0
     qaoa_reps = 1
 
     if QISKIT_AVAILABLE:
@@ -176,7 +182,10 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
             qaoa = QAOA(sampler=sampler, optimizer=COBYLA(maxiter=100), reps=qaoa_reps)
             optimizer = MinimumEigenOptimizer(qaoa)
 
+            t0_qaoa = time.perf_counter()
             result = optimizer.solve(qp)
+            quantum_runtime = time.perf_counter() - t0_qaoa
+
             quantum_config = np.array([int(result.x[i]) for i in range(N)])
             quantum_val = quantum_config.dot(Q).dot(quantum_config)
             quantum_cost = quantum_val + constant
@@ -193,7 +202,8 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
                     is_assigned = quantum_config[idx] == 1
                     if is_assigned:
                         if t == 0: assigned_t0 += 1
-                        if t == 1: assigned_t1 += 1
+                        elif t == 1: assigned_t1 += 1
+                        else: invalid_assignments += 1
                     decoded_assignments.append({
                         "agent_id": selected_agents[i]['agent_id'],
                         "time_slot": 10 + t,
@@ -203,14 +213,18 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
 
             shortfall_t0 = max(0, d_t0 - assigned_t0)
             shortfall_t1 = max(0, d_t1 - assigned_t1)
+            overstaffing_t0 = max(0, assigned_t0 - d_t0)
+            overstaffing_t1 = max(0, assigned_t1 - d_t1)
+
             shortfall = shortfall_t0 + shortfall_t1
-            feasible = (shortfall == 0)
+            overstaffing = overstaffing_t0 + overstaffing_t1
+            feasible = (shortfall == 0 and invalid_assignments == 0)
 
             print("\\n--- Decoded QAOA Assignments ---")
             for a in decoded_assignments:
                 if a["assigned"]:
                     print(f"Agent {a['agent_id']} assigned to {a['time_slot']}:00 (Wage: ${a['wage']})")
-            print(f"Feasible: {feasible}, Shortfall: {shortfall}")
+            print(f"Feasible: {feasible}, Shortfall: {shortfall}, Overstaffing: {overstaffing}")
 
         except Exception as ex:
             print(f"Error solving with Qiskit QAOA: {ex}")
@@ -227,12 +241,18 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     objective_match = "YES" if (quantum_status == "SUCCESS" and np.isclose(classical_cost, quantum_cost)) else "NO"
     configuration_match = "YES" if (quantum_status == "SUCCESS" and np.array_equal(classical_config, quantum_config)) else "NO"
 
+    absolute_gap = abs(classical_cost - quantum_cost) if quantum_status == "SUCCESS" else None
+    relative_gap = (absolute_gap / abs(classical_cost) * 100) if (quantum_status == "SUCCESS" and classical_cost != 0) else None
+
     # quantum_classical_comparison.csv (Benchmark Data)
     benchmark_data = [
         {"Metric": "Target Agents T0", "Classical_Exact": str(d_t0), "Quantum_QAOA": str(d_t0), "Match": "N/A"},
         {"Metric": "Target Agents T1", "Classical_Exact": str(d_t1), "Quantum_QAOA": str(d_t1), "Match": "N/A"},
         {"Metric": "Objective Value", "Classical_Exact": f"{classical_cost:.2f}", "Quantum_QAOA": f"{quantum_cost:.2f}" if quantum_status == "SUCCESS" else "N/A", "Match": objective_match},
-        {"Metric": "Optimal Config", "Classical_Exact": str(list(classical_config)), "Quantum_QAOA": str(list(quantum_config)) if quantum_status == "SUCCESS" else "N/A", "Match": configuration_match}
+        {"Metric": "Absolute Gap", "Classical_Exact": "0.00", "Quantum_QAOA": f"{absolute_gap:.2f}" if quantum_status == "SUCCESS" else "N/A", "Match": "N/A"},
+        {"Metric": "Relative Gap (%)", "Classical_Exact": "0.00%", "Quantum_QAOA": f"{relative_gap:.2f}%" if quantum_status == "SUCCESS" else "N/A", "Match": "N/A"},
+        {"Metric": "Optimal Config", "Classical_Exact": str(list(classical_config)), "Quantum_QAOA": str(list(quantum_config)) if quantum_status == "SUCCESS" else "N/A", "Match": configuration_match},
+        {"Metric": "Runtime (s)", "Classical_Exact": f"{classical_runtime:.4f}", "Quantum_QAOA": f"{quantum_runtime:.4f}" if quantum_status == "SUCCESS" else "N/A", "Match": "N/A"}
     ]
 
     df_comparison = pd.DataFrame(benchmark_data)
@@ -242,17 +262,24 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
 
     # quantum_metadata.csv (Audit and Run Details)
     metadata_data = [
+        {"Metric": "Instance ID", "Value": str(run_id) if run_id else "N/A"},
+        {"Metric": "Benchmark Name", "Value": f"Reduced_QAOA_{N_agents}x{N_time}"},
+        {"Metric": "Skill Group", "Value": target_skill},
         {"Metric": "Original D1 Demand", "Value": f"T0:{req_t0}|T1:{req_t1}"},
         {"Metric": "Quantum POC Capacity", "Value": "2 agents per slot"},
         {"Metric": "Reduced Demand Actually Optimized", "Value": f"T0:{d_t0}|T1:{d_t1}"},
         {"Metric": "Reduction Flag", "Value": str(requirement_reduced)},
         {"Metric": "Reduction Reason", "Value": reduction_reason},
+        {"Metric": "Selected Agent Count", "Value": str(N_agents)},
         {"Metric": "Selected Agents", "Value": "|".join([a['agent_id'] for a in selected_agents])},
+        {"Metric": "Slot Count", "Value": str(N_time)},
         {"Metric": "Selected Time Slots", "Value": "10:00|11:00"},
         {"Metric": "Number of Qubits", "Value": str(N)},
         {"Metric": "Penalty Alpha", "Value": str(alpha)},
         {"Metric": "QAOA Reps", "Value": str(qaoa_reps)},
         {"Metric": "QAOA Optimizer", "Value": "COBYLA"},
+        {"Metric": "Classical Solver", "Value": "Exact Brute Force"},
+        {"Metric": "Quantum Solver", "Value": "QAOA Statevector"},
         {"Metric": "Seed", "Value": "42"},
         {"Metric": "Feasibility Checked", "Value": str(feasible)},
         {"Metric": "Optimization Status", "Value": quantum_status},

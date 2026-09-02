@@ -39,9 +39,9 @@ End-to-end decision-support system combining AI demand forecasting, classical op
 
 > **Business Problem:** Call centers lose millions annually to overstaffing (idle agents, inflated labor costs) and understaffing (SLA breaches, customer churn). Traditional scheduling relies on static rules and reactive adjustments that cannot handle combinatorial scale.
 >
-> **Our Solution:** QWO-X is a **hybrid AI–Classical–Quantum decision intelligence platform** that forecasts demand, optimizes multi-constraint shift schedules, validates operational performance via queue simulation, and delivers actionable recommendations through an interactive executive dashboard.
+> **Our Solution:** QWO-X is a **hybrid AI–Classical–Quantum decision intelligence platform** that forecasts demand, optimizes multi-constraint shift schedules via classical CP-SAT, validates operational performance via queue simulation, and delivers actionable recommendations through an interactive executive dashboard. A Qiskit QAOA module serves as a reduced-scale quantum proof-of-concept.
 >
-> **Impact:** Demonstrated **39.5% reduction in operational staffing costs** (**$208,050 annual savings**) while maintaining **>90% SLA attainment**, with full explainability for operations managers.
+> **Impact:** Demonstrated **39.5% reduction in operational staffing costs** (**$208,050 annual savings** via classical CP-SAT) while maintaining **>90% SLA attainment**, with full explainability for operations managers.
 
 | Metric | Before (Naive Peak Scheduling) | After (QWO-X Optimized) | Improvement |
 |---|---|---|---|
@@ -204,9 +204,9 @@ $$
 
 | Staffing Strategy | Daily Cost | Annual Cost | Annual Savings vs. Naive |
 |---|---|---|---|
-| Naive Peak Scheduling | $1,440 | $525,600 | — |
-| AI + Classical Optimization | $870 | $317,550 | **$208,050 (39.5%)** |
-| Quantum-Enhanced (QAOA Refined) | $870 | $317,550 | **$208,050 (39.5%)** |
+| Naive Peak Scheduling (Theoretical Baseline) | $1,440 | $525,600 | — |
+| AI + Classical Optimization (CP-SAT Production) | $870 | $317,550 | **$208,050 (39.5%)** |
+| Quantum-Enhanced (QAOA Proof of Concept) | $870 | $317,550 | **$208,050 (39.5%)** |
 
 *Note: Quantum refinement achieves identical cost to classical at this scale, serving as validation rather than immediate cost reduction. See [Quantum Formulation](#quantum-formulation-qaoa) for architectural justification.*
 

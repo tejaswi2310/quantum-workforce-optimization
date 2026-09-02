@@ -15,7 +15,7 @@ import sys
 backend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend")
 if backend_path not in sys.path:
     sys.path.append(backend_path)
-    
+
 from app.services.storage_service import StorageService
 
 
@@ -58,7 +58,7 @@ st.markdown("""
     .risk-high { background-color: rgba(214, 39, 40, 0.15); border-color: #d62728; }
     .risk-medium { background-color: rgba(255, 127, 14, 0.15); border-color: #ff7f0e; }
     .risk-low { background-color: rgba(44, 160, 44, 0.15); border-color: #2ca02c; }
-    
+
     .xai-card {
         background-color: #252536;
         border-left: 4px solid #1f77b4;
@@ -196,23 +196,23 @@ tabs = st.tabs([
 def calculate_kpis(vol_mult, df_c, df_v):
     if df_c is None or df_v is None:
         return {}
-    
+
     import math
     from app.core_engine.queue.queue_simulator import erlang_c
-    
+
     # Calculate costs (Schedule is fixed, demand scales)
     opt_agents = int(df_c['scheduled_agents'].sum())
     total_cost = opt_agents * 15
-    
+
     # Utilization and Idle
     required = np.ceil(df_c['required_agents'].sum() * vol_mult)
     scheduled = df_c['scheduled_agents'].sum()
     idle_time = max(0, scheduled - required)
     utilization = (required / scheduled * 100) if scheduled > 0 else 100
-    
+
     # Overtime
-    overtime = 0 
-    
+    overtime = 0
+
     # Wait time and SLA (Recalculate Erlang-C accurately for scenario)
     slas = []
     asas = []
@@ -228,12 +228,12 @@ def calculate_kpis(vol_mult, df_c, df_v):
             asas.append((p_w * 300) / (sim_agents - A))
         else:
             asas.append(999.9)
-            
+
     effective_sla = sum(slas) / len(slas) if slas else 0
     avg_wait = sum(asas) / len(asas) if asas else 15.0
-        
+
     queue_length = max(0, int((required - scheduled) * 5)) if required > scheduled else 0
-    
+
     # Risk
     if effective_sla < min_sla:
         risk = "HIGH"
@@ -241,7 +241,7 @@ def calculate_kpis(vol_mult, df_c, df_v):
         risk = "MEDIUM"
     else:
         risk = "LOW"
-        
+
     return {
         "Staffing Cost": f"${total_cost:,}",
         "Average Wait Time": f"{avg_wait:.1f}s",
@@ -261,7 +261,7 @@ def calculate_kpis(vol_mult, df_c, df_v):
 with tabs[0]:
     st.header(f"📈 Scenario Dashboard: {selected_scenario}")
     st.markdown("Top-level operational Key Performance Indicators based on the selected business scenario.")
-    
+
     kpi_data = calculate_kpis(volume_multiplier, df_classical, df_validation)
     if kpi_data:
         def render_kpi(icon, title, value, extra_class=""):
@@ -278,7 +278,7 @@ with tabs[0]:
         with k_c2: st.markdown(render_kpi("⏱️", "Average Wait Time", kpi_data["Average Wait Time"]), unsafe_allow_html=True)
         with k_c3: st.markdown(render_kpi("🎯", "SLA Achievement", kpi_data["SLA Achievement"]), unsafe_allow_html=True)
         with k_c4: st.markdown(render_kpi("📈", "Staff Utilization", kpi_data["Staff Utilization"]), unsafe_allow_html=True)
-        
+
         risk_class = "risk-high" if kpi_data["Risk Indicator"] == "HIGH" else ("risk-medium" if kpi_data["Risk Indicator"] == "MEDIUM" else "risk-low")
         with k_c5: st.markdown(render_kpi("⚠️", "Risk Indicator", kpi_data["Risk Indicator"], risk_class), unsafe_allow_html=True)
 
@@ -289,13 +289,13 @@ with tabs[0]:
         with k_c8: st.markdown(render_kpi("👥", "Queue Length", kpi_data["Queue Length"]), unsafe_allow_html=True)
         with k_c9: st.markdown(render_kpi("🧑‍💼", "Employee Coverage", kpi_data["Employee Coverage"]), unsafe_allow_html=True)
         with k_c10: st.markdown(render_kpi("🔮", "Forecast Accuracy", kpi_data["Forecast Accuracy"]), unsafe_allow_html=True)
-        
+
     st.write("---")
     st.subheader("📊 Scenario Comparison: Normal vs Selected")
-    
+
     if kpi_data:
         base_kpis = calculate_kpis(1.0, df_classical, df_validation)
-        
+
         def extract_num(val_str):
             import re
             nums = re.findall(r"[-+]?\d*\.\d+|\d+", str(val_str).replace(",", ""))
@@ -304,7 +304,7 @@ with tabs[0]:
         metrics_to_compare = ["Staffing Cost", "Average Wait Time", "SLA Achievement", "Staff Utilization"]
         base_vals = [extract_num(base_kpis[m]) for m in metrics_to_compare]
         scen_vals = [extract_num(kpi_data[m]) for m in metrics_to_compare]
-        
+
         fig, axes = plt.subplots(1, 4, figsize=(14, 3))
         fig.patch.set_facecolor('#0e1117') # Match Streamlit dark theme
         colors = ['#1f77b4', '#ff7f0e']
@@ -316,27 +316,27 @@ with tabs[0]:
             for spine in axes[i].spines.values():
                 spine.set_edgecolor('#555555')
             axes[i].grid(axis='y', linestyle='--', alpha=0.3, color='#555555')
-        
+
         plt.tight_layout()
         st.pyplot(fig)
         plt.close()
-        
+
         comp_df = pd.DataFrame({
             "Metric": list(base_kpis.keys()),
             "Normal Day": list(base_kpis.values()),
             f"Scenario ({selected_scenario})": list(kpi_data.values())
         })
         st.dataframe(comp_df, width="stretch")
-    
+
     st.write("---")
     # Existing Hourly Analytics
     st.subheader("Historical Volume Analytics")
     df_analytics = apply_filters(df_raw)
-    
+
     if df_analytics is not None and not df_analytics.empty:
         # Recalculate calls received with what-if scenario
         df_analytics['calls_received'] = df_analytics['calls_received'] * volume_multiplier
-        
+
         col_c1, col_c2 = st.columns(2)
         with col_c1:
             st.write("Hourly Call Volume Pattern")
@@ -349,7 +349,7 @@ with tabs[0]:
             ax.grid(True, linestyle='--', alpha=0.5)
             st.pyplot(fig)
             plt.close()
-            
+
         with col_c2:
             st.write("Call Volume by Day of Week")
             day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -369,11 +369,11 @@ with tabs[1]:
     df_fc_filtered = apply_filters(df_forecast)
     if df_fc_filtered is not None and not df_fc_filtered.empty:
         df_fc_filtered['predicted_calls'] = df_fc_filtered['predicted_calls'] * volume_multiplier
-        
+
         daily_fc = df_fc_filtered.groupby('date').agg({
             'predicted_calls': 'sum'
         }).reset_index()
-        
+
         st.subheader(f"Forecast Trend ({selected_scenario})")
         st.caption("Prediction intervals not generated by current ML model.")
         fig, ax = plt.subplots(figsize=(12, 4))
@@ -393,20 +393,20 @@ with tabs[1]:
 # ==========================================
 with tabs[2]:
     st.header("⚙️ Classical Schedule Optimization & Explainable AI")
-    
+
     if df_classical is not None and not df_classical.empty:
         opt_df = df_classical.copy()
         opt_df['calls'] = (opt_df['calls'] * volume_multiplier).round(1)
         opt_df['required_agents'] = np.ceil(opt_df['required_agents'] * volume_multiplier).astype(int)
         opt_df['scheduled_agents'] = np.ceil(opt_df['scheduled_agents'] * volume_multiplier).astype(int)
         opt_df['cost'] = opt_df['scheduled_agents'] * 15
-        
+
         st.subheader("Shift Optimization Schedule")
-        
+
         fig, ax = plt.subplots(figsize=(12, 4))
         x_indices = np.arange(24)
         width = 0.35
-        
+
         ax.bar(x_indices - width/2, opt_df['required_agents'], width, label='Required Agents', color='#d62728')
         ax.bar(x_indices + width/2, opt_df['scheduled_agents'], width, label='Scheduled Agents', color='#2ca02c')
         ax.set_xlabel("Hour of Day")
@@ -416,20 +416,20 @@ with tabs[2]:
         ax.grid(axis='y', linestyle='--', alpha=0.5)
         st.pyplot(fig)
         plt.close()
-        
+
         st.write("---")
         st.subheader("🧠 Explainable Optimization (XAI)")
         st.markdown("Understand why the AI generated this specific shift configuration.")
-        
+
         xai_hour = st.selectbox("Select Hour to Analyze", range(24))
-        
+
         req = opt_df.iloc[xai_hour]['required_agents']
         sched = opt_df.iloc[xai_hour]['scheduled_agents']
         idle = max(0, sched - req)
-        
+
         with st.container():
             st.markdown(f"#### 🔍 Explaining Algorithmic Recommendation for {xai_hour:02d}:00")
-            
+
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown(f"""
@@ -478,18 +478,43 @@ with tabs[2]:
 # ==========================================
 with tabs[3]:
     st.header("🔬 Quantum Intelligence: QAOA vs Classical Exact Solver")
-    
+
     if df_quantum is not None and not df_quantum.empty:
         st.markdown("This section demonstrates the algorithmic bridging between Classical Operations Research and Noisy Intermediate-Scale Quantum (NISQ) devices.")
-        
+        st.info("**Reduced-Scale QAOA Proof of Concept.** Production workforce scheduling remains CP-SAT due to current quantum resource limitations.")
+
+        # Extract real values from df_quantum
+        try:
+            classical_val_str = df_quantum.loc[df_quantum['Metric'] == 'Objective Value', 'Classical_Exact'].values[0]
+            classical_cost_display = f"${float(classical_val_str):.2f}"
+        except:
+            classical_cost_display = "N/A"
+
+        try:
+            quantum_val_str = df_quantum.loc[df_quantum['Metric'] == 'Objective Value', 'Quantum_QAOA'].values[0]
+            quantum_cost_display = f"${float(quantum_val_str):.2f}" if str(quantum_val_str).strip() != "N/A" else "N/A"
+        except:
+            quantum_cost_display = "N/A"
+
+        try:
+            classical_rt = df_quantum.loc[df_quantum['Metric'] == 'Runtime (s)', 'Classical_Exact'].values[0]
+            quantum_rt = df_quantum.loc[df_quantum['Metric'] == 'Runtime (s)', 'Quantum_QAOA'].values[0]
+            classical_rt_display = f"{float(classical_rt):.4f} s"
+            quantum_rt_display = f"{float(quantum_rt):.4f} s" if str(quantum_rt).strip() != "N/A" else "N/A"
+        except:
+            classical_rt_display = "N/A"
+            quantum_rt_display = "N/A"
+
         col_q1, col_q2 = st.columns(2)
-        
+
         with col_q1:
-            st.markdown("""
+            st.markdown(f"""
             <div style='background-color:#1e1e2e; padding: 25px; border-radius:10px; border-top: 5px solid #d62728; margin-bottom: 20px; height: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
                 <h3 style='margin-top:0; display:flex; align-items:center; gap: 10px;'>💻 Classical Exact Solver (MIP)</h3>
                 <h4 style='color: #888;'>Cost / Output</h4>
-                <h2 style='color: white; margin:0;'>$75.00</h2>
+                <h2 style='color: white; margin:0;'>{classical_cost_display}</h2>
+                <h4 style='color: #888; margin-top: 10px;'>Runtime</h4>
+                <p style='color: white; font-size: 16px; margin:0;'>{classical_rt_display}</p>
                 <br/>
                 <h4 style='color: #888;'>Algorithmic Complexity</h4>
                 <p style='color: #d62728; font-weight: bold; font-size: 18px;'>O(2^N) - Exponential</p>
@@ -497,13 +522,15 @@ with tabs[3]:
                 <p style='color: #bbb;'><b>Limitation:</b> State space explosion prevents solving full 500-agent 24-hour schedules natively without significant heuristics or decomposition.</p>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with col_q2:
-            st.markdown("""
+            st.markdown(f"""
             <div style='background-color:#1e1e2e; padding: 25px; border-radius:10px; border-top: 5px solid #2ca02c; margin-bottom: 20px; height: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
                 <h3 style='margin-top:0; display:flex; align-items:center; gap: 10px;'>⚛️ Quantum QAOA Solver</h3>
                 <h4 style='color: #888;'>Cost / Output</h4>
-                <h2 style='color: white; margin:0;'>$75.00</h2>
+                <h2 style='color: white; margin:0;'>{quantum_cost_display}</h2>
+                <h4 style='color: #888; margin-top: 10px;'>Runtime</h4>
+                <p style='color: white; font-size: 16px; margin:0;'>{quantum_rt_display}</p>
                 <br/>
                 <h4 style='color: #888;'>Algorithmic Complexity</h4>
                 <p style='color: #2ca02c; font-weight: bold; font-size: 18px;'>Polynomial Scaling Expected</p>
@@ -511,11 +538,11 @@ with tabs[3]:
                 <p style='color: #bbb;'><b>Advantage:</b> Qiskit Statevector Simulator maps the Reduced QUBO problem flawlessly, proving the mathematical model and unlocking near-term hardware scaling.</p>
             </div>
             """, unsafe_allow_html=True)
-            
+
         st.write("---")
         st.subheader("Reduced QUBO Execution Trace")
         st.table(df_quantum)
-        
+
         st.write("---")
         st.subheader("Scaling Theoretical Comparison")
         fig, ax = plt.subplots(figsize=(10, 4))
@@ -540,27 +567,27 @@ with tabs[3]:
 # ==========================================
 with tabs[4]:
     st.header("💰 ROI & Business Impact Analysis")
-    
+
     if df_classical is not None and not df_classical.empty:
         opt_agents = int(np.ceil(df_classical['scheduled_agents'].sum() * volume_multiplier))
         opt_cost = opt_agents * 15
-        
+
         peak_agents = int(np.ceil(df_classical['required_agents'].max() * volume_multiplier))
         naive_agents = peak_agents * 24
         naive_cost = naive_agents * 15
-        
+
         daily_savings = naive_cost - opt_cost
         annual_savings = daily_savings * 365
-        
+
         col_b1, col_b2, col_b3 = st.columns(3)
-        col_b1.metric("Naive Daily Staffing Cost", f"${naive_cost:,.2f}")
-        col_b2.metric("Optimized Daily Cost", f"${opt_cost:,.2f}")
+        col_b1.metric("Naive Daily Staffing Cost (Theoretical)", f"${naive_cost:,.2f}")
+        col_b2.metric("Optimized Daily Cost (CP-SAT)", f"${opt_cost:,.2f}")
         col_b3.metric("Projected Annual Savings", f"${annual_savings:,.2f}", delta=f"${daily_savings:,.2f} Saved / Day")
-        
+
         fig, ax = plt.subplots(figsize=(8, 4))
-        strategies = ['Naive (Peak Coverage)', 'AI + Classical (Optimized)', 'Quantum-Enhanced']
+        strategies = ['Naive (Peak Coverage)', 'AI + Classical (Optimized)', 'Quantum-Enhanced (Theoretical)']
         costs = [naive_cost, opt_cost, opt_cost]
-        
+
         ax.bar(strategies, costs, color=['#d62728', '#1f77b4', '#2ca02c'])
         ax.set_ylabel("Daily Operational Cost ($)")
         ax.grid(axis='y', linestyle='--', alpha=0.5)
@@ -576,10 +603,10 @@ with tabs[4]:
 # ==========================================
 with tabs[5]:
     st.header("✅ Erlang C Queue SLA Validation")
-    
+
     if df_validation is not None and not df_validation.empty:
         val_df = df_validation.copy()
-        
+
         if volume_multiplier != 1.0:
             import math
             from app.core_engine.queue.queue_simulator import erlang_c
@@ -592,19 +619,19 @@ with tabs[5]:
                 sla = 1.0 - p_w * math.exp(-(sim_agents - A) * 20 / 300)
                 return max(0.0, min(100.0, sla * 100.0))
             val_df['sla_percent'] = val_df.apply(compute_sla, axis=1)
-            
+
         val_df['status'] = val_df['sla_percent'].map(lambda x: 'PASS' if x >= min_sla else 'FAIL')
         passes = (val_df['status'] == 'PASS').sum()
         status_badge = "✅ 24/24 Hours PASS" if passes == 24 else f"⚠️ {24 - passes}/24 Hours FAIL"
-        
+
         st.subheader(f"Queue SLA Audit Table ({status_badge})")
-        
+
         def highlight_status(val):
             return 'background-color: #d4edda; color: #155724' if val == 'PASS' else 'background-color: #f8d7da; color: #721c24'
-            
+
         styled_df = val_df.style.map(highlight_status, subset=['status']).format({'sla_percent': '{:.1f}%'})
         st.dataframe(styled_df)
-        
+
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.bar(val_df['hour'], val_df['sla_percent'], color='#1f77b4', label='SLA %')
         ax.axhline(y=min_sla, color='red', linestyle='--', label=f'Target SLA ({min_sla}%)')
