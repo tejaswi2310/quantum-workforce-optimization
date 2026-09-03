@@ -32,7 +32,7 @@ def test_adequate_staffing_valid_erlang_c(tmp_path):
     assert row['metric_validity'] == "VALID_ERLANG_C"
     assert row['sla_percent'] > 0
     assert row['asa_seconds'] > 0
-    assert row['abandonment_not_modeled'] == True
+    assert row['abandonment_not_modeled'] == False
 
 def test_understaffed_interval_remains_understaffed(tmp_path):
     run_id = uuid.uuid4()

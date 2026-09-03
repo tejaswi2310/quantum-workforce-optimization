@@ -144,13 +144,15 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             raise ValueError(f"Agent {agent_id} has malformed availability string of length {len(raw_avail)}. Must be exactly 24 or 168 characters.")
 
         max_hours = int(row.get('max_weekly_hours', 40))
+        preferred_shift = str(row.get('preferred_shift', 'flexible'))
 
         agents.append({
             'id': agent_id,
             'skills': agent_skills,
             'wage': agent_wage,
             'availability': availability_str,
-            'max_weekly_hours': max_hours
+            'max_weekly_hours': max_hours,
+            'preferred_shift': preferred_shift
         })
 
     # Validation: Enforce unique IDs
@@ -274,11 +276,16 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     w_cost = 1
     w_shortfall = 20000  # Must strictly exceed maximum shift cost to prevent understaffing
     w_idle = 5
+    w_pref = 5  # Soft penalty for schedule friction / preference violations
 
     total_cost_expr = []
+    total_pref_penalty_expr = []
+
     for i, agent in enumerate(agents):
         wage = agent['wage']
         ot_rate = wage * 1.5
+        pref = agent['preferred_shift']
+
         for d in range(7):
             for s in range(len(shift_templates)):
                 shift = shift_templates[s]
@@ -286,14 +293,26 @@ def run_classical_optimization(run_id: uuid.UUID = None):
                 if cost > 0:
                     total_cost_expr.append(x[(i, d, s)] * cost)
 
+                if shift['name'] != 'None' and pref != 'flexible':
+                    start_h = shift['start_hour']
+                    is_match = True
+                    if pref == 'morning' and not (6 <= start_h <= 10): is_match = False
+                    elif pref == 'afternoon' and not (11 <= start_h <= 15): is_match = False
+                    elif pref == 'evening' and not (16 <= start_h <= 20): is_match = False
+
+                    if not is_match:
+                        total_pref_penalty_expr.append(x[(i, d, s)])
+
     total_cost = sum(total_cost_expr)
     total_shortfall = sum(shortfall[(k, t)] for k in skills for t in range(168))
     total_idle = sum(idle[(k, t)] for k in skills for t in range(168))
+    total_pref = sum(total_pref_penalty_expr)
 
     model.Minimize(
         w_cost * total_cost +
         w_shortfall * total_shortfall +
-        w_idle * total_idle
+        w_idle * total_idle +
+        w_pref * total_pref
     )
 
     # 6. Solve

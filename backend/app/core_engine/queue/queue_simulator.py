@@ -12,6 +12,7 @@ from app.services.storage_service import StorageService
 # Configuration parameters
 TARGET_SLA = 0.80
 TARGET_WAIT_SECONDS = 20
+AVERAGE_PATIENCE_SECONDS = 120.0  # Configurable assumption for deterministic abandonment approximation
 
 def required_agents_for_sla(calls, aht_seconds, interval_seconds, target_sla, target_wait_seconds):
     """
@@ -113,6 +114,8 @@ def run_queue_simulation(run_id: uuid.UUID = None):
             metric_validity = "VALID_ERLANG_C"
             status = "PASS"
             p_w = 0.0
+            abandonment_rate_percent = 0.0
+            abandonment_not_modeled = False
 
         # Edge case: negative or zero agents but calls exist
         elif sim_agents <= 0:
@@ -124,6 +127,8 @@ def run_queue_simulation(run_id: uuid.UUID = None):
             p_w = 1.0
             all_pass = False
             lowest_sla = 0.0
+            abandonment_rate_percent = 100.0
+            abandonment_not_modeled = False
 
         # Overloaded: Erlang-C is mathematically unstable for c <= A
         elif sim_agents <= A:
@@ -135,6 +140,8 @@ def run_queue_simulation(run_id: uuid.UUID = None):
             p_w = 1.0
             all_pass = False
             lowest_sla = 0.0
+            abandonment_rate_percent = 100.0
+            abandonment_not_modeled = False
 
         # Valid Erlang-C
         else:
@@ -151,6 +158,11 @@ def run_queue_simulation(run_id: uuid.UUID = None):
             # Agent utilization
             utilization = (A / sim_agents) * 100.0
             metric_validity = "VALID_ERLANG_C"
+
+            # Deterministic Abandonment Approximation
+            prob_abandon = p_w * (asa / (asa + AVERAGE_PATIENCE_SECONDS))
+            abandonment_rate_percent = max(0.0, min(100.0, prob_abandon * 100.0))
+            abandonment_not_modeled = False
 
             status = "PASS" if sla_percent >= 80.0 else "FAIL"
             if sla_percent < 80.0:
@@ -171,6 +183,7 @@ def run_queue_simulation(run_id: uuid.UUID = None):
             "sla_percent": round(sla_percent, 2) if sla_percent is not None else None,
             "asa_seconds": round(asa, 2) if asa is not None else None,
             "utilization_percent": round(utilization, 2) if utilization is not None else None,
+            "abandonment_rate_percent": round(abandonment_rate_percent, 2) if abandonment_rate_percent is not None else None,
             "metric_validity": metric_validity,
             "abandonment_not_modeled": abandonment_not_modeled,
             "queue_status": status,

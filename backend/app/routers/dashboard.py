@@ -51,7 +51,7 @@ def get_dashboard_metrics(
     if shifts_detailed_path.exists():
         df_det = pd.read_csv(shifts_detailed_path)
         total_agents = len(df_det['agent_id'].unique())
-        
+
     opt_cost = calculate_optimized_cost(latest_run.id)
     if opt_cost is not None:
         total_cost = opt_cost
@@ -74,8 +74,10 @@ def get_dashboard_metrics(
         total_calls = sanitize_float(df_queue['calls'].sum())
         if total_calls is None:
             total_calls = 0
+        if 'abandonment_rate_percent' in df_queue.columns:
+            abandonment_rate = sanitize_float(df_queue['abandonment_rate_percent'].mean())
         else:
-            total_calls = int(total_calls)
+            abandonment_rate = None
 
     return {
         "success": True,
@@ -87,7 +89,10 @@ def get_dashboard_metrics(
             "avg_agents": avg_agents,
             "total_agents": total_agents,
             "total_cost": total_cost,
-            "abandonment_rate": None, # Explicitly not modeled in infinite patience Erlang-C
+            "abandonment_rate": abandonment_rate,
+            "abandonment_model": "erlang_c_derived_approximation" if abandonment_rate is not None else None,
+            "abandonment_is_approximation": True,
+            "average_patience_seconds": 120.0,
             "avg_handle_time": 300,
             "peak_hour": get_peak_hour(latest_run.id) or "N/A"
         }
@@ -145,9 +150,9 @@ from app.core_engine.queue.queue_simulator import required_agents_for_sla, erlan
 @router.get("/whatif")
 def get_whatif_scenario(
     project_id: uuid.UUID,
-    volume_change: float = Query(0),
-    budget: float = Query(5000),
-    sla: float = Query(80),
+    volume_change: float = Query(0, ge=-100, le=1000),
+    budget: float = Query(5000, gt=0),
+    sla: float = Query(80, ge=0, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -180,13 +185,27 @@ def get_whatif_scenario(
     if avg_wage is None:
         new_cost = None
 
+    is_over_budget = None
+    budget_variance = None
+    explainability_note = "Mathematical Scenario Analysis (Erlang-C Approximation). Projected over 168-hour weekly period."
+
+    if new_cost is not None:
+        budget_variance = new_cost - budget
+        is_over_budget = budget_variance > 0
+        if is_over_budget:
+            explainability_note += f" Projected weekly cost exceeds the supplied budget by ${budget_variance:.2f}. Potential mitigation: evaluate a lower SLA target or lower demand scenario."
+
     return {
         "success": True,
         "data": {
             "projected_cost": sanitize_float(new_cost),
             "projected_sla": sanitize_float(sla),
             "agents_needed": new_agents_needed,
-            "note": "Mathematical Scenario Analysis (Erlang-C Approximation)"
+            "budget": budget,
+            "is_over_budget": is_over_budget,
+            "budget_variance": sanitize_float(budget_variance),
+            "explainability": explainability_note,
+            "note": explainability_note
         }
     }
 

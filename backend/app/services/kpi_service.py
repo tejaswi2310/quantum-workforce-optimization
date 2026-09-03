@@ -15,7 +15,7 @@ def get_average_wage(run_id: uuid.UUID) -> Optional[float]:
             roster_path = global_path
         else:
             return None
-            
+
     try:
         df = pd.read_csv(roster_path)
         if 'wage' in df.columns and not df.empty:
@@ -27,7 +27,7 @@ def get_average_wage(run_id: uuid.UUID) -> Optional[float]:
 
 def calculate_baseline_cost(run_id: uuid.UUID) -> Optional[float]:
     """
-    Calculates the naive baseline cost: 
+    Calculates the naive baseline cost:
     Scheduling the maximum required agents for all 168 hours of the week at the average roster wage.
     Returns None if data is missing.
     """
@@ -38,11 +38,11 @@ def calculate_baseline_cost(run_id: uuid.UUID) -> Optional[float]:
         shift_schedule_path = storage.result_path("classical_optimization_schedule.csv")
         if not shift_schedule_path.exists():
             return None
-        
+
     avg_wage = get_average_wage(run_id)
     if avg_wage is None:
         return None
-        
+
     try:
         df = pd.read_csv(shift_schedule_path)
         if 'required_agents' in df.columns and not df.empty:
@@ -79,10 +79,10 @@ def get_peak_hour(run_id: uuid.UUID) -> Optional[str]:
     """
     storage = StorageService(run_id)
     queue_path = storage.result_path("queue_validation_results.csv")
-    
+
     if queue_path.exists():
         df = pd.read_csv(queue_path)
-        metric_col = 'offered_traffic' if 'offered_traffic' in df.columns else 'calls'
+        metric_col = 'calls'
     else:
         forecast_path = storage.data_path("processed/forecast_results.csv")
         if forecast_path.exists():
@@ -90,7 +90,7 @@ def get_peak_hour(run_id: uuid.UUID) -> Optional[str]:
             metric_col = 'predicted_calls'
         else:
             return None
-            
+
     if metric_col not in df.columns or df.empty:
         return None
 
@@ -104,13 +104,13 @@ def get_peak_hour(run_id: uuid.UUID) -> Optional[str]:
         else:
             sort_cols = [metric_col]
             asc = [False]
-            
+
         df_sorted = df.sort_values(by=sort_cols, ascending=asc)
         peak_row = df_sorted.iloc[0]
-        
+
         day_str = peak_row.get('date', 'Unknown')
         hour_val = peak_row.get('hour')
-        
+
         if pd.isna(hour_val) or hour_val == 'Unknown':
             return f"{day_str} Unknown"
         else:
