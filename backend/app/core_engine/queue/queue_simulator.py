@@ -17,6 +17,7 @@ AVERAGE_PATIENCE_SECONDS = 120.0  # Configurable assumption for deterministic ab
 def required_agents_for_sla(calls, aht_seconds, interval_seconds, target_sla, target_wait_seconds):
     """
     Calculates the minimum required agents to achieve the target SLA using Erlang-C.
+    Optimized to use the recursive Erlang-B/C relationship to avoid O(c^2) behavior.
     """
     if calls <= 0:
         return 0, 0.0, 1.0, 0.0 # agents, traffic, sla, wait_prob
@@ -27,13 +28,29 @@ def required_agents_for_sla(calls, aht_seconds, interval_seconds, target_sla, ta
     # Must start iterating with agents > A for stability, minimum floor(A) + 1
     c = max(1, int(math.floor(A)) + 1)
 
+    # Compute initial Erlang B for c
+    B = 1.0
+    if A > 0:
+        for i in range(1, c + 1):
+            B = (A * B) / (i + A * B)
+
     while True:
-        p_w = erlang_c(c, A)
+        if A <= 0:
+            p_w = 0.0
+        else:
+            denom = c - A * (1 - B)
+            p_w = (c * B) / denom if denom > 0 else 1.0
+
+        p_w = max(0.0, min(1.0, p_w))
         sla = 1.0 - p_w * math.exp(-(c - A) * target_wait_seconds / aht_seconds)
 
         if sla >= target_sla:
             return c, A, sla, p_w
+
+        # Advance B for c+1 for the next iteration
         c += 1
+        if A > 0:
+            B = (A * B) / (c + A * B)
 
 def erlang_c(c, A):
     if A >= c:
@@ -41,18 +58,17 @@ def erlang_c(c, A):
     if A <= 0:
         return 0.0
 
-    # Numerically stable Erlang C calculation using log-sum-exp trick
+    # Numerically stable Erlang C calculation using recursive Erlang B formula
     try:
-        log_num = c * math.log(A) - math.lgamma(c + 1) + math.log(c / (c - A))
+        B = 1.0
+        for i in range(1, int(c) + 1):
+            B = (A * B) / (i + A * B)
 
-        log_terms = []
-        for k in range(int(c)):
-            log_terms.append(k * math.log(A) - math.lgamma(k + 1))
+        denom = c - A * (1 - B)
+        if denom <= 0:
+            return 1.0
 
-        max_log = max(max(log_terms), log_num)
-
-        sum_denom = sum(math.exp(lt - max_log) for lt in log_terms) + math.exp(log_num - max_log)
-        p_w = math.exp(log_num - max_log) / sum_denom
+        p_w = (c * B) / denom
         return max(0.0, min(1.0, p_w))
     except Exception:
         return 0.0

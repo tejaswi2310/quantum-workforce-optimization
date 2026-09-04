@@ -147,6 +147,17 @@ def get_dashboard_analytics(
     }
 
 from app.core_engine.queue.queue_simulator import required_agents_for_sla, erlang_c
+import functools
+from app.services.kpi_service import get_average_wage
+
+@functools.lru_cache(maxsize=32)
+def _load_queue_results_cached(path_str: str) -> pd.DataFrame:
+    return pd.read_csv(path_str)
+
+@functools.lru_cache(maxsize=32)
+def _get_average_wage_cached(run_id: uuid.UUID):
+    return get_average_wage(run_id)
+
 @router.get("/whatif")
 def get_whatif_scenario(
     project_id: uuid.UUID,
@@ -167,15 +178,15 @@ def get_whatif_scenario(
     if not queue_path.exists():
         raise HTTPException(status_code=404, detail="Queue validation results not found")
 
-    df_queue = pd.read_csv(queue_path)
+    df_queue = _load_queue_results_cached(str(queue_path)).copy()
     new_agents_needed = 0
     new_cost = 0.0
 
     avg_wage = get_average_wage(latest_run.id)
 
     # We will compute required agents for each hour given the new volume and target SLA
-    for _, row in df_queue.iterrows():
-        base_calls = float(row['calls'])
+    for row in df_queue.itertuples(index=False):
+        base_calls = float(row.calls)
         adjusted_calls = base_calls * (1 + volume_change / 100.0)
         c, A, achieved_sla, p_w = required_agents_for_sla(adjusted_calls, 300, 3600, sla / 100.0, 20)
         new_agents_needed += c
