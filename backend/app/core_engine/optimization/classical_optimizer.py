@@ -319,6 +319,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 60.0
     solver.parameters.num_search_workers = 8
+    solver.parameters.random_seed = 42
     solver.parameters.log_search_progress = True
     status = solver.Solve(model)
 
