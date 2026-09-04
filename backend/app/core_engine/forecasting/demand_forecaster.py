@@ -21,7 +21,7 @@ The helper validate_forecasting_time_series() enforces this contract at
 runtime and raises ValueError with a precise diagnostic if it is violated.
 """
 import os
-import pickle
+
 import numpy as np
 import pandas as pd
 from datetime import timedelta
@@ -231,18 +231,12 @@ def train_forecast(run_id: uuid.UUID = None):
         df.loc[mask, 'model'] = 'RandomForest'
         df.loc[mask, 'baseline_calls'] = y_base.round(2)
 
-    # 9. Save models and results
-    model_dir = storage.get_data_dir() / "models"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    with open(model_dir / "forecasting_model.pkl", "wb") as f:
-        pickle.dump(model, f)
-    with open(model_dir / "feature_columns.pkl", "wb") as f:
-        pickle.dump(features, f)
+
         
     # Save the evaluation results
     output_cols = ['date', 'hour', 'interval', 'channel', 'skill_group', 
                    'calls_received', 'predicted_calls', 'baseline_calls', 'split', 'model']
-    df[output_cols].to_csv(storage.data_path("processed/forecast_evaluation.csv"), index=False)
+    storage.atomic_write_csv(df[output_cols], storage.data_path("processed/forecast_evaluation.csv"), index=False)
     
     # 10. Generate 7-day future forecast (for optimizer)
     print("\nGenerating 7-day future forecast...")
@@ -308,7 +302,7 @@ def train_forecast(run_id: uuid.UUID = None):
     preds = model.predict(X_fc)
     df_forecast['predicted_calls'] = np.clip(preds, 0, None).round(2)
     
-    df_forecast.to_csv(storage.data_path("processed/forecast_results.csv"), index=False)
+    storage.atomic_write_csv(df_forecast, storage.data_path("processed/forecast_results.csv"), index=False)
     print(f"Future forecast saved to {storage.data_path('processed/forecast_results.csv')}. Rows: {len(df_forecast)}")
 
 if __name__ == "__main__":

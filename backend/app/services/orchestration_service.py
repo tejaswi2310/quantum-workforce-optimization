@@ -97,17 +97,25 @@ def execute_optimization_pipeline(run_id: uuid.UUID):
             storage = StorageService(run_id)
             metrics_path = storage.result_path("optimization_metrics.json")
             if os.path.exists(metrics_path):
-                with open(metrics_path, "r") as f:
-                    metrics = json.load(f)
+                try:
+                    with open(metrics_path, "r") as f:
+                        metrics = json.load(f)
+
+                    # Store metrics in results json column
+                    current_results = run.results or {}
+                    current_results.update(metrics)
+                    run.results = current_results
                     
-                # Store metrics in results json column
-                current_results = run.results or {}
-                current_results.update(metrics)
-                run.results = current_results
-                
-                # If the optimizer explicitly failed or had shortfall, we can optionally 
-                # keep track of the specific optimizer status in the DB
-                if "optimization_status" in metrics:
+                    # If the optimizer explicitly failed or had shortfall, we can optionally
+                    # keep track of the specific optimizer status in the DB
+                    if "optimization_status" in metrics:
+                        # Only override to FAILED if it actually failed; otherwise let COMPLETED stand
+                        if metrics["optimization_status"] == "INFEASIBLE":
+                            run.status = "FAILED"
+                            run.error_message = "Optimization found no feasible solution"
+                except json.JSONDecodeError as e:
+                    run.status = "FAILED"
+                    run.error_message = f"Artifact corrupted: metrics.json is malformed. Error: {str(e)}"
                     # Let the overall run status be COMPLETED, but we could also bubble it up
                     pass
                     

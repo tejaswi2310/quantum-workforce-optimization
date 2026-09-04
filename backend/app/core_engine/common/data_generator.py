@@ -113,7 +113,7 @@ def generate_data(run_id: uuid.UUID = None):
     df = pd.DataFrame(records)
 
     data_path = storage.data_path("raw/synthetic_call_center.csv")
-    df.to_csv(data_path, index=False)
+    storage.atomic_write_csv(df, data_path, index=False)
 
     print(f"Generated data shape: {df.shape}")
     print(f"Columns: {list(df.columns)}")
@@ -189,7 +189,7 @@ def generate_data(run_id: uuid.UUID = None):
 
     df_roster = pd.DataFrame(roster)
     roster_path = storage.data_path("raw/synthetic_roster.csv")
-    df_roster.to_csv(roster_path, index=False)
+    storage.atomic_write_csv(df_roster, roster_path, index=False)
     print(f"Generated roster with {len(df_roster)} agents.")
     print(f"Saved to {roster_path}")
 

@@ -211,7 +211,7 @@ def run_queue_simulation(run_id: uuid.UUID = None):
         print(f"{d_str:<12}{hour:<6}{calls:<8.1f}{sim_agents:<8}{required_agents:<8}{A:<10.2f}{sla_str:<10}{asa_str:<10}{metric_validity:<12}")
 
     df_validation = pd.DataFrame(results)
-    df_validation.to_csv(storage.result_path("queue_validation_results.csv"), index=False)
+    storage.atomic_write_csv(df_validation, storage.result_path("queue_validation_results.csv"), index=False)
 
     print("-" * 87)
     print(f"Queue validation completed.")

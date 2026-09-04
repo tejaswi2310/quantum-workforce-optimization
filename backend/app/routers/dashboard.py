@@ -47,6 +47,7 @@ def get_dashboard_metrics(
     total_cost = 0.0
     total_calls = 0
     total_agents = 0
+    abandonment_rate = None
 
     if shifts_detailed_path.exists():
         df_det = pd.read_csv(shifts_detailed_path)
@@ -76,8 +77,6 @@ def get_dashboard_metrics(
             total_calls = 0
         if 'abandonment_rate_percent' in df_queue.columns:
             abandonment_rate = sanitize_float(df_queue['abandonment_rate_percent'].mean())
-        else:
-            abandonment_rate = None
 
     return {
         "success": True,
@@ -152,7 +151,14 @@ from app.services.kpi_service import get_average_wage
 
 @functools.lru_cache(maxsize=32)
 def _load_queue_results_cached(path_str: str) -> pd.DataFrame:
-    return pd.read_csv(path_str)
+    try:
+        df = pd.read_csv(path_str)
+        required_cols = {'hour', 'calls', 'required_agents', 'sla_percent'}
+        if not required_cols.issubset(df.columns):
+            raise HTTPException(status_code=500, detail=f"Artifact corrupted: queue_validation_results.csv is missing required columns. Expected {required_cols}.")
+        return df
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+        raise HTTPException(status_code=500, detail="Artifact corrupted: queue_validation_results.csv is malformed or empty.")
 
 @functools.lru_cache(maxsize=32)
 def _get_average_wage_cached(run_id: uuid.UUID):

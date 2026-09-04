@@ -114,13 +114,13 @@ def run_shift_optimization(run_id: uuid.UUID = None):
     print(f"168/168 Hour Coverage Verification: {'PASS' if coverage_pass else 'FAIL'}")
     
     df_out_shifts = pd.DataFrame(hourly_coverage)
-    df_out_shifts.to_csv(storage.result_path("shift_schedule.csv"), index=False)
+    storage.atomic_write_csv(df_out_shifts, storage.result_path("shift_schedule.csv"), index=False)
     
     df_active = pd.DataFrame(active_shifts)
     if not df_active.empty:
-        df_active.to_csv(storage.result_path("active_shifts.csv"), index=False)
+        storage.atomic_write_csv(df_active, storage.result_path("active_shifts.csv"), index=False)
     else:
-        pd.DataFrame({'shift_start_hour': [], 'agents': [], 'shift_type': []}).to_csv(storage.result_path("active_shifts.csv"), index=False)
+        storage.atomic_write_csv(pd.DataFrame({'shift_start_hour': [], 'agents': [], 'shift_type': []}), storage.result_path("active_shifts.csv"), index=False)
 
 if __name__ == "__main__":
     run_shift_optimization()

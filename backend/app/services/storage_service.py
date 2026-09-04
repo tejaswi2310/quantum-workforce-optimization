@@ -84,3 +84,39 @@ class StorageService:
     def report_path(self, filename: str) -> Path:
         """Resolves to the run's reports folder, enforcing path traversal prevention."""
         return self._safe_path(self.get_reports_dir(), filename)
+
+    def atomic_write_csv(self, df: "pd.DataFrame", filepath: Path, **kwargs):
+        """Atomically writes a pandas DataFrame to a CSV file."""
+        import os
+
+        temp_path = filepath.with_suffix(filepath.suffix + '.tmp')
+        try:
+            # Write to temporary file
+            df.to_csv(temp_path, **kwargs)
+            # Atomically replace destination
+            os.replace(temp_path, filepath)
+        except Exception as e:
+            # Clean up temporary file on failure
+            if temp_path.exists():
+                os.remove(temp_path)
+            raise e
+
+    def atomic_write_json(self, data: dict, filepath: Path, **kwargs):
+        """Atomically writes a dictionary to a JSON file."""
+        import os
+        import json
+
+        temp_path = filepath.with_suffix(filepath.suffix + '.tmp')
+        try:
+            # Write to temporary file
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, **kwargs)
+                f.flush()
+                os.fsync(f.fileno())
+            # Atomically replace destination
+            os.replace(temp_path, filepath)
+        except Exception as e:
+            # Clean up temporary file on failure
+            if temp_path.exists():
+                os.remove(temp_path)
+            raise e

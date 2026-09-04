@@ -32,6 +32,8 @@ def test_pooled_staffing_and_skill_isolation(MockStorageService, tmp_path):
     mock_storage.ensure_run_dirs.return_value = None
     mock_storage.data_path.side_effect = lambda path: tmp_path / path
     mock_storage.result_path.side_effect = lambda path: tmp_path / path
+    mock_storage.atomic_write_csv.side_effect = lambda df, path, **kwargs: df.to_csv(path, **kwargs)
+    mock_storage.atomic_write_json.side_effect = lambda data, path, **kwargs: json.dump(data, open(path, "w"), **kwargs)
     
     (tmp_path / "processed").mkdir(parents=True, exist_ok=True)
     (tmp_path / "raw").mkdir(parents=True, exist_ok=True)
@@ -83,6 +85,8 @@ def test_168_hour_timeline_and_queue_integration(MockStorageService, tmp_path):
     mock_storage.ensure_run_dirs.return_value = None
     mock_storage.data_path.side_effect = lambda path: tmp_path / path
     mock_storage.result_path.side_effect = lambda path: tmp_path / path
+    mock_storage.atomic_write_csv.side_effect = lambda df, path, **kwargs: df.to_csv(path, **kwargs)
+    mock_storage.atomic_write_json.side_effect = lambda data, path, **kwargs: json.dump(data, open(path, "w"), **kwargs)
     
     dates = pd.date_range("2026-06-30", periods=7).strftime("%Y-%m-%d").tolist()
     

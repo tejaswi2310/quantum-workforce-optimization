@@ -257,7 +257,7 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
 
     df_comparison = pd.DataFrame(benchmark_data)
     comparison_path = storage.result_path("quantum_classical_comparison.csv")
-    df_comparison.to_csv(comparison_path, index=False)
+    storage.atomic_write_csv(df_comparison, comparison_path, index=False)
     print(f"Quantum-Classical comparison saved to {comparison_path}")
 
     # quantum_metadata.csv (Audit and Run Details)
@@ -288,7 +288,7 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
 
     df_meta = pd.DataFrame(metadata_data)
     meta_path = storage.result_path("quantum_metadata.csv")
-    df_meta.to_csv(meta_path, index=False)
+    storage.atomic_write_csv(df_meta, meta_path, index=False)
     print(f"Quantum metadata saved to {meta_path}")
 
 if __name__ == "__main__":

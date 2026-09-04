@@ -107,7 +107,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
         t = date_to_day_idx[row['date']] * 24 + row['hour']
         demand[(k, t)] += int(c)
 
-    pd.DataFrame(validation_results).to_csv(storage.result_path("erlang_requirement_validation.csv"), index=False)
+    storage.atomic_write_csv(pd.DataFrame(validation_results), storage.result_path("erlang_requirement_validation.csv"), index=False)
 
     # 2. Setup Agents and Skills from Roster
     roster_path = storage.data_path("raw/synthetic_roster.csv")
@@ -384,10 +384,10 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             r['cost'] = total_cost_calc
 
         df_results = pd.DataFrame(results)
-        df_results.to_csv(storage.result_path("classical_optimization_schedule.csv"), index=False)
+        storage.atomic_write_csv(df_results, storage.result_path("classical_optimization_schedule.csv"), index=False)
         print(f"Classical optimization completed and saved to {storage.result_path('classical_optimization_schedule.csv')}")
         df_shifts = pd.DataFrame(agent_shifts)
-        df_shifts.to_csv(storage.result_path("agent_shifts_detailed.csv"), index=False)
+        storage.atomic_write_csv(df_shifts, storage.result_path("agent_shifts_detailed.csv"), index=False)
 
         # Save metrics for API response
         total_shortfall_val = sum(solver.Value(shortfall[(k, t)]) for k in skills for t in range(168))
@@ -400,8 +400,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             "staffing_shortfall": int(total_shortfall_val),
             "total_cost": round(total_cost_calc, 2)
         }
-        with open(storage.result_path("optimization_metrics.json"), "w") as f:
-            json.dump(metrics, f)
+        storage.atomic_write_json(metrics, storage.result_path("optimization_metrics.json"), indent=4)
 
     else:
         print("Solver failed to find a feasible solution.")
@@ -410,8 +409,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             "staffing_shortfall": -1,
             "total_cost": 0.0
         }
-        with open(storage.result_path("optimization_metrics.json"), "w") as f:
-            json.dump(metrics, f)
+        storage.atomic_write_json(metrics, storage.result_path("optimization_metrics.json"), indent=4)
 
 if __name__ == "__main__":
     run_classical_optimization()

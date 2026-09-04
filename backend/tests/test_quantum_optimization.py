@@ -131,7 +131,7 @@ def test_quantum_feasibility_validation(temp_workspace, capsys):
 
 def test_quantum_metrics_artifacts(temp_workspace):
     tmp_path = temp_workspace
-    with patch('app.services.storage_service.StorageService.result_path', side_effect=lambda x: os.path.join(tmp_path, "results", x)):
+    with patch('app.services.storage_service.StorageService.result_path', side_effect=lambda x: tmp_path / "results" / x):
         run_id = uuid.uuid4()
         run_quantum_optimization(run_id)
 
@@ -153,7 +153,7 @@ def test_quantum_metrics_artifacts(temp_workspace):
 
 def test_quantum_reproducibility(temp_workspace):
     tmp_path = temp_workspace
-    with patch('app.services.storage_service.StorageService.result_path', side_effect=lambda x: os.path.join(tmp_path, "results", x)):
+    with patch('app.services.storage_service.StorageService.result_path', side_effect=lambda x: tmp_path / "results" / x):
         run_id = uuid.uuid4()
         run_quantum_optimization(run_id)
         df1_comp = pd.read_csv(os.path.join(tmp_path, "results", "quantum_classical_comparison.csv"))
