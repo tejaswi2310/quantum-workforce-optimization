@@ -1,7 +1,24 @@
 """
 Module for training the AI demand forecasting model.
-Uses a chronological split, constructs lag features safely without future leakage, 
+Uses a chronological split, constructs lag features safely without future leakage,
 and trains a RandomForestRegressor.
+
+HOURLY TIME-SERIES DATA CONTRACT
+---------------------------------
+The lag and rolling features in this module assume the following contract
+for every (channel, skill_group) group in the training data:
+
+  * One row represents exactly one hourly observation.
+  * Exactly one observation exists per hour (no duplicates, no missing hours).
+  * Timestamps are valid and form a strictly regular hourly sequence.
+  * Chronological sorting is applied before any lag/rolling computation.
+
+Under this contract:
+  shift(24)  == 24 hours ago (yesterday, same hour)
+  shift(168) == 168 hours ago (last week, same hour)
+
+The helper validate_forecasting_time_series() enforces this contract at
+runtime and raises ValueError with a precise diagnostic if it is violated.
 """
 import os
 import pickle
@@ -29,6 +46,74 @@ def smape(y_true, y_pred):
     res[np.isnan(res)] = 0.0
     return np.mean(res) * 100.0
 
+
+def validate_forecasting_time_series(df: "pd.DataFrame") -> None:
+    """
+    Validate that every (channel, skill_group) group satisfies the hourly
+    time-series contract required by the row-based lag features.
+
+    The caller must have already constructed the 'datetime' column via::
+
+        df['datetime'] = pd.to_datetime(df['date']) + pd.to_timedelta(df['hour'], unit='h')
+
+    and sorted the DataFrame before calling this function.
+
+    Raises
+    ------
+    ValueError
+        If any group contains duplicate timestamps, missing hours, or
+        timestamps that are not exactly one hour apart.
+
+    Notes
+    -----
+    * Does not mutate the caller's DataFrame.
+    * Approximately O(n) in the number of rows.
+    * Group isolation is complete: each (channel, skill_group) pair is
+      validated independently.
+    """
+    expected_delta = pd.Timedelta(hours=1)
+
+    for (channel, skill_group), grp in df.groupby(["channel", "skill_group"], sort=False):
+        ts = grp["datetime"]  # already sorted — view only, no copy
+
+        # 1. Duplicate timestamps
+        dup_mask = ts.duplicated(keep=False)
+        if dup_mask.any():
+            dup_ts = ts[dup_mask].iloc[0]
+            raise ValueError(
+                f"Duplicate timestamp detected in group "
+                f"channel='{channel}', skill_group='{skill_group}': {dup_ts}"
+            )
+
+        # 2 & 3. Missing hours / irregular interval — check consecutive diffs
+        if len(ts) < 2:
+            continue  # single-row group: no consecutive pair to check
+
+        ts_values = ts.values  # numpy datetime64 array — avoids Python overhead
+        for idx in range(1, len(ts_values)):
+            delta = pd.Timestamp(ts_values[idx]) - pd.Timestamp(ts_values[idx - 1])
+            if delta != expected_delta:
+                prev_ts = pd.Timestamp(ts_values[idx - 1])
+                curr_ts = pd.Timestamp(ts_values[idx])
+                if delta > expected_delta:
+                    # Gap — at least one hour missing
+                    missing_ts = prev_ts + expected_delta
+                    raise ValueError(
+                        f"Missing hourly timestamp in group "
+                        f"channel='{channel}', skill_group='{skill_group}': "
+                        f"expected {missing_ts} after {prev_ts}, "
+                        f"but next observed timestamp is {curr_ts}"
+                    )
+                else:
+                    # Sub-hourly or irregular interval
+                    raise ValueError(
+                        f"Irregular timestamp interval in group "
+                        f"channel='{channel}', skill_group='{skill_group}': "
+                        f"observed interval {delta} between {prev_ts} and {curr_ts} "
+                        f"(expected exactly 1 hour)"
+                    )
+
+
 def train_forecast(run_id: uuid.UUID = None):
     storage = StorageService(run_id)
     storage.ensure_run_dirs()
@@ -49,18 +134,26 @@ def train_forecast(run_id: uuid.UUID = None):
     df['datetime'] = pd.to_datetime(df['date']) + pd.to_timedelta(df['hour'], unit='h')
     df = df.sort_values(by=['datetime', 'channel', 'skill_group']).reset_index(drop=True)
     
-    # 3. Feature engineering (No future leakage)
+    # 3. Validate hourly time-series contract before computing lag features.
+    #    shift(24) / shift(168) are row-based and only equal 24 h / 168 h when
+    #    every (channel, skill_group) group has exactly one observation per hour
+    #    with no gaps, no duplicates, and no irregular intervals.
+    validate_forecasting_time_series(df)
+
+    # 4. Feature engineering (No future leakage)
     df['is_weekend'] = df['day_of_week'].isin(['Saturday', 'Sunday']).astype(int)
-    
-    # Construct lags properly grouped by series
-    # Dataset is hourly, so lag 24 is yesterday same hour, lag 168 is last week same hour
+
+    # Construct lags properly grouped by series.
+    # Dataset is hourly and the contract above is now validated, so:
+    #   lag_24  = yesterday same hour  (shift of 24 rows within each group)
+    #   lag_168 = last week same hour  (shift of 168 rows within each group)
     df['lag_24'] = df.groupby(['channel', 'skill_group'])['calls_received'].shift(24)
     df['lag_168'] = df.groupby(['channel', 'skill_group'])['calls_received'].shift(168)
     
     # Rolling mean 24 (historical only, shift by 1 to not include current hour)
     df['rolling_mean_24'] = df.groupby(['channel', 'skill_group'])['calls_received'] \
                               .transform(lambda x: x.shift(1).rolling(24, min_periods=1).mean())
-                              
+
     # Drop NaNs caused by lagging
     df = df.dropna(subset=['lag_168']).reset_index(drop=True)
     
