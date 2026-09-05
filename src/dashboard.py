@@ -177,9 +177,9 @@ def calculate_kpis(vol_mult, df_c, df_v):
     whatif_res = fetch_api("whatif", params={"volume_change": vol_mult, "budget": 1000000, "sla": min_sla})
     if whatif_res and whatif_res.get("success"):
         whatif_data = whatif_res.get("data", {})
-        queue_length = max(0, int((whatif_data.get("agents_needed", required) - scheduled) * 5)) if whatif_data.get("agents_needed", required) > scheduled else 0
-        effective_sla = min_sla if scheduled >= whatif_data.get("agents_needed", required) else (min_sla - 10) # Approximation for UI feedback
-        avg_wait = 15.0 if effective_sla >= min_sla else 45.0
+        queue_length = whatif_data.get("expected_queue_length", 0)
+        effective_sla = whatif_data.get("expected_sla", min_sla)
+        avg_wait = whatif_data.get("expected_wait_seconds", 15.0)
     else:
         effective_sla = 80.0
         avg_wait = 15.0
@@ -205,7 +205,7 @@ def calculate_kpis(vol_mult, df_c, df_v):
         "Queue Length": f"{queue_length} calls",
         "Employee Coverage": f"{int(scheduled)} active",
         "Risk Indicator": risk,
-        "Forecast Accuracy": "90.2%", # From Model Training
+        "Forecast Accuracy": "N/A", # Provided by Model Training, not yet available
         "Total Cost Raw": total_cost,
         "Baseline Cost Raw": adj_baseline,
         "Weekly Savings": max(0.0, adj_baseline - total_cost),
@@ -581,4 +581,3 @@ with tabs[5]:
             st.error("Failed to retrieve What-If analysis from backend API.")
     else:
         st.info("No data available to perform What-If analysis.")
-
