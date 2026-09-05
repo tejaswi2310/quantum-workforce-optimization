@@ -44,7 +44,8 @@ app.include_router(optimize.router)
 app.include_router(validate.router)
 app.include_router(reports.router)
 app.include_router(dashboard.router)
-
+from app.routers import dashboard_demo
+app.include_router(dashboard_demo.demo_router)
 # Global exception handler
 @app.exception_handler(CustomException)
 async def custom_exception_handler(request: Request, exc: CustomException):
