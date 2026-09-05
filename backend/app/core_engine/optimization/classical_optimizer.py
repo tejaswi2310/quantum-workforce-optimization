@@ -273,7 +273,9 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     # 5. Objective Function
     # We want to minimize cost but severely penalize shortfall
     w_cost = 1
-    w_shortfall = 20000  # Must strictly exceed maximum shift cost to prevent understaffing
+    # Mathematical Bound: Max Shift Cost (~$330) + Max Idle Penalty (45) + Pref Penalty (5) = ~$380.
+    # 1000 guarantees lexicographic dominance over cost, preventing understaffing.
+    w_shortfall = 1000
     w_idle = 5
     w_pref = 5  # Soft penalty for schedule friction / preference violations
 

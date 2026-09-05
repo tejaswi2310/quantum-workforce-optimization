@@ -73,18 +73,6 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     requirement_reduced = False
     reduction_reason = "None"
 
-    # Scale down demand for the toy 4-agent problem
-    if d_t0 > 2 or d_t1 > 2:
-        requirement_reduced = True
-        reduction_reason = "Reduced quantum instance capacity (4 agents) cannot cover original D1 requirement."
-        d_t0 = min(d_t0, 2)
-        d_t1 = min(d_t1, 2)
-
-    print(f"Skill: {target_skill}, Hours: 10:00 - 12:00")
-    print(f"Original Demand T0: {req_t0}, Demand T1: {req_t1}")
-    if requirement_reduced:
-        print(f"Reduced to Demand T0: {d_t0}, Demand T1: {d_t1} ({reduction_reason})")
-
     # 2. D2 INTEGRATION: Load actual roster
     roster_path = storage.data_path("raw/synthetic_roster.csv")
     if not os.path.exists(roster_path):
@@ -99,7 +87,9 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     # Deterministic selection: technical skill, sorted by agent_id, take top 4
     eligible_agents = df_roster[df_roster['skills'].str.contains(target_skill)].sort_values('agent_id')
     selected_agents_df = eligible_agents.head(4)
-    if len(selected_agents_df) == 0:
+    N_agents = len(selected_agents_df)
+
+    if N_agents == 0:
         print("No eligible agents for the quantum reduced instance. Skipping.")
         metadata_data = [
             {"Metric": "Instance ID", "Value": str(run_id) if run_id else "N/A"},
@@ -114,6 +104,20 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     selected_agents = selected_agents_df.to_dict('records')
     for a in selected_agents:
         print(f"Selected Agent: {a['agent_id']}, Wage: {a['wage']}, Skills: {a['skills']}")
+
+    # Scale down demand for the toy N-agent problem
+    # Max feasible capacity per slot without forcing shortfall is N_agents
+    max_capacity = min(2, N_agents)
+    if d_t0 > max_capacity or d_t1 > max_capacity:
+        requirement_reduced = True
+        reduction_reason = f"Reduced quantum instance capacity ({N_agents} agents) cannot cover original D1 requirement."
+        d_t0 = min(d_t0, max_capacity)
+        d_t1 = min(d_t1, max_capacity)
+
+    print(f"Skill: {target_skill}, Hours: 10:00 - 12:00")
+    print(f"Original Demand T0: {req_t0}, Demand T1: {req_t1}")
+    if requirement_reduced:
+        print(f"Reduced to Demand T0: {d_t0}, Demand T1: {d_t1} ({reduction_reason})")
 
     # 4 Agents, 2 time periods => 8 decision variables x_{i,t}
     # Indexing: var_idx = i * 2 + t

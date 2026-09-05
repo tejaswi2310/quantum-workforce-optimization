@@ -14,12 +14,12 @@ This report documents the benchmark and sensitivity experiments summarized in th
 
 | Metric | OR-Tools (CP-SAT) | QAOA (Qiskit Aer, p=3) | Interpretation |
 |---|---|---|---|
-| Daily Staffing Cost | $870.00 | $870.00 | QAOA converges to identical cost; validates QUBO encoding correctness |
+| Daily Staffing Cost | $870.00 (Benchmark Example) | $870.00 (Benchmark Example) | QAOA converges to identical cost; validates QUBO encoding correctness |
 | Runtime (48 binary vars) | ~1.2 s | ~18–25 s | Classical faster on small simulators; quantum explores different solution topology |
 | SLA Attainment | >90% | >90% | Quantum solution maintains operational feasibility after post-processing |
 | Overtime | Optimized | Optimized | Equivalent overtime allocation |
 | Constraint Violations | 0 | 0 (after repair) | Classical post-processing restores hard constraints |
-| Scalability Outlook | Polynomial $O(n^3)$ | Sub-exponential potential | Quantum advantage hypothesized at >10k binary variables |
+| Scalability Outlook | Exact classical solution | Statevector Simulation | Validates theoretical encoding architecture without claiming quantum advantage |
 
 **Ablation note:** QAOA circuit depth was swept from $p=1$ to $p=3$; solution quality improved monotonically with depth at the cost of proportionally longer simulator runtime, consistent with expected QAOA behavior on small combinatorial instances.
 

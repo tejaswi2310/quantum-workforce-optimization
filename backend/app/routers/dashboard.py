@@ -8,7 +8,7 @@ import os
 import pandas as pd
 import math
 import uuid
-from app.services.kpi_service import get_peak_hour, get_average_wage, calculate_optimized_cost
+from app.services.kpi_service import get_peak_hour, get_average_wage, calculate_optimized_cost, calculate_baseline_cost
 
 def sanitize_float(val):
     if val is None:
@@ -54,8 +54,21 @@ def get_dashboard_metrics(
         total_agents = len(df_det['agent_id'].unique())
 
     opt_cost = calculate_optimized_cost(latest_run.id)
+    baseline_cost = calculate_baseline_cost(latest_run.id)
+    
+    daily_savings = 0.0
+    annual_savings = 0.0
+    naive_cost = 0.0
+    
     if opt_cost is not None:
         total_cost = opt_cost
+
+    if baseline_cost is not None:
+        naive_cost = baseline_cost
+        if opt_cost is not None:
+            weekly_savings = max(0.0, baseline_cost - opt_cost)
+            daily_savings = weekly_savings / 7.0
+            annual_savings = weekly_savings * 52.0
 
     if shift_schedule_path.exists():
         df_shifts = pd.read_csv(shift_schedule_path)
@@ -93,7 +106,11 @@ def get_dashboard_metrics(
             "abandonment_is_approximation": True,
             "average_patience_seconds": 120.0,
             "avg_handle_time": 300,
-            "peak_hour": get_peak_hour(latest_run.id) or "N/A"
+            "peak_hour": get_peak_hour(latest_run.id) or "N/A",
+            "naive_cost": naive_cost,
+            "optimized_cost": total_cost,
+            "daily_savings": daily_savings,
+            "annual_savings": annual_savings
         }
     }
 

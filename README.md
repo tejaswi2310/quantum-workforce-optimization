@@ -41,13 +41,13 @@ End-to-end decision-support system combining AI demand forecasting, classical op
 >
 > **Our Solution:** QWO-X is a **hybrid AI–Classical–Quantum decision intelligence platform** that forecasts demand, optimizes multi-constraint shift schedules via classical CP-SAT, validates operational performance via queue simulation, and delivers actionable recommendations through an interactive executive dashboard. A Qiskit QAOA module serves as a reduced-scale quantum proof-of-concept.
 >
-> **Impact:** Demonstrated **39.5% reduction in operational staffing costs** (**$208,050 annual savings** via classical CP-SAT) while maintaining **>90% SLA attainment**, with full explainability for operations managers.
+> **Impact:** Demonstrates **significant reduction in operational staffing costs** (dynamically calculated vs naive baseline) while maintaining **target SLA attainment**, with full explainability for operations managers.
 
 | Metric | Before (Naive Peak Scheduling) | After (QWO-X Optimized) | Improvement |
 |---|---|---|---|
-| Daily Operational Cost | $1,440 | $870 | **−39.5%** |
-| Annual Operational Cost | $525,600 | $317,550 | **−$208,050** |
-| Avg. SLA Attainment | ~75% | >90% | **+15 pp** |
+| Daily Operational Cost | Configurable Baseline | Dynamically Optimized | **Varies by scenario** |
+| Annual Operational Cost | Extrapolated Baseline | Dynamically Optimized | **Subject to volume** |
+| Avg. SLA Attainment | Baseline | Target Driven | **Achieved** |
 | Overtime Hours / Week | Baseline | Optimized | Reduced |
 | Idle Time (Non-Peak) | Baseline | Optimized | Reduced |
 
@@ -191,12 +191,12 @@ $$
 
 | Metric | OR-Tools (CP-SAT) | QAOA (Qiskit Aer, p=3) | Interpretation |
 |---|---|---|---|
-| Daily Staffing Cost | $870.00 | $870.00 | QAOA converges to identical cost; validates QUBO encoding correctness |
+| Daily Staffing Cost | $870.00 (Benchmark Example) | $870.00 (Benchmark Example) | QAOA converges to identical cost; validates QUBO encoding correctness |
 | Runtime (48 binary vars) | ~1.2 s | ~18–25 s | Classical faster on small simulators; quantum explores different solution topology |
 | SLA Attainment | >90% | >90% | Quantum solution maintains operational feasibility after post-processing |
 | Overtime | Optimized | Optimized | Equivalent overtime allocation |
 | Constraint Violations | 0 | 0 (after repair) | Classical post-processing restores hard constraints |
-| Scalability Outlook | Polynomial $O(n^3)$ | Sub-exponential potential | Quantum advantage hypothesized at >10k binary variables |
+| Scalability Outlook | Exact classical solution | Statevector Simulation | Validates theoretical encoding architecture without claiming quantum advantage |
 
 **Key Insight:** At 48 binary variables, OR-Tools remains the production baseline. The QAOA component demonstrates (1) formulation validity, (2) hybrid workflow readiness, and (3) future hardware scalability — not immediate computational supremacy.
 
@@ -204,9 +204,9 @@ $$
 
 | Staffing Strategy | Daily Cost | Annual Cost | Annual Savings vs. Naive |
 |---|---|---|---|
-| Naive Peak Scheduling (Theoretical Baseline) | $1,440 | $525,600 | — |
-| AI + Classical Optimization (CP-SAT Production) | $870 | $317,550 | **$208,050 (39.5%)** |
-| Quantum-Enhanced (QAOA Proof of Concept) | $870 | $317,550 | **$208,050 (39.5%)** |
+| Naive Peak Scheduling (Theoretical Baseline) | Dynamic | Extrapolated | — |
+| AI + Classical Optimization (CP-SAT Production) | Optimized | Extrapolated | **Varies by scenario** |
+| Quantum-Demonstrator (QAOA Refined) | Match | Match | **Match** |
 
 *Note: Quantum refinement achieves identical cost to classical at this scale, serving as validation rather than immediate cost reduction. See [Quantum Formulation](#quantum-formulation-qaoa) for architectural justification.*
 
@@ -240,7 +240,7 @@ We stress-test the optimizer under realistic operational disruptions:
 *High-level KPIs for C-suite and operations directors — annual savings, SLA achievement, utilization, and cost breakdown.*
 
 Key metrics displayed:
-- **Annual Savings:** $208,050 (39.5% reduction)
+- **Annual Savings:** Dynamically Calculated (e.g., $208,050 in benchmark scenario)
 - **SLA Achievement:** >90%
 - **Average Customer Wait:** Optimized
 - **Agent Utilization:** Improved

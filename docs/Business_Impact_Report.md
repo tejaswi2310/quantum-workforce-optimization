@@ -14,9 +14,9 @@ Call centers lose money in two directions: overstaffing (idle labor cost) and un
 
 | Metric | Before (Naive Peak Scheduling) | After (QWO-X Optimized) | Improvement |
 |---|---|---|---|
-| Daily Operational Cost | $1,440 | $870 | **−39.5%** |
-| Annual Operational Cost | $525,600 | $317,550 | **−$208,050** |
-| Avg. SLA Attainment | ~75% | >90% | **+15 pp** |
+| Daily Operational Cost | Configurable Baseline | Dynamically Optimized | **Varies by scenario** |
+| Annual Operational Cost | Extrapolated Baseline | Dynamically Optimized | **Subject to volume** |
+| Avg. SLA Attainment | Baseline | Target Driven | **Achieved** |
 | Overtime Hours / Week | Baseline | Optimized | Reduced |
 | Idle Time (Non-Peak) | Baseline | Optimized | Reduced |
 
@@ -24,9 +24,9 @@ Call centers lose money in two directions: overstaffing (idle labor cost) and un
 
 | Staffing Strategy | Daily Cost | Annual Cost | Annual Savings vs. Naive |
 |---|---|---|---|
-| Naive Peak Scheduling | $1,440 | $525,600 | — |
-| AI + Classical Optimization | $870 | $317,550 | **$208,050 (39.5%)** |
-| Quantum-Enhanced (QAOA Refined) | $870 | $317,550 | **$208,050 (39.5%)** |
+| Naive Peak Scheduling | Dynamic | Extrapolated | — |
+| AI + Classical Optimization | Optimized | Extrapolated | **Varies by scenario** |
+| Quantum-Demonstrator (QAOA Refined) | Match | Match | **Match** |
 
 ## Where the Savings Come From
 
