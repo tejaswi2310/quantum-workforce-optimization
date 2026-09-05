@@ -1,0 +1,8 @@
+Metric,Classical_Exact,Quantum_QAOA,Match
+Target Agents T0,2,2,N/A
+Target Agents T1,2,2,N/A
+Objective Value,97.84,97.84,YES
+Absolute Gap,0.00,0.00,N/A
+Relative Gap (%),0.00%,0.00%,N/A
+Optimal Config,"[np.int64(1), np.int64(1), np.int64(1), np.int64(1), np.int64(0), np.int64(0), np.int64(0), np.int64(0)]","[np.int64(1), np.int64(1), np.int64(1), np.int64(1), np.int64(0), np.int64(0), np.int64(0), np.int64(0)]",YES
+Runtime (s),0.0025,29.7422,N/A

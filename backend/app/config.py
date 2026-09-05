@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = f"sqla+{DEFAULT_DB_URL}"
     CELERY_RESULT_BACKEND: str = f"db+{DEFAULT_DB_URL}"
     RUNTIME_STORAGE_ROOT: str = "runtime/runs"
+    DASHBOARD_DEMO_MODE: str = "default"
 
     class Config:
         env_file = ".env"

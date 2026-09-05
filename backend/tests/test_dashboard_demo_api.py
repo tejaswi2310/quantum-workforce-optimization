@@ -70,18 +70,20 @@ def test_get_demo_whatif_sla_validation():
     assert response_negative_sla.status_code == 422 # Should fail ge=0 validation
 
 def test_get_latest_global_run_selects_completed():
-    """Regression test: verify dashboard demo endpoints select the latest COMPLETED run."""
+    """Regression test: verify dashboard demo endpoints select the newest COMPLETED and FULLY USABLE run."""
     import uuid
+    import os
     from datetime import datetime, timedelta
     from tests.conftest import TestingSessionLocal, engine
     from app.models.database import Base
     from app.models.models import OptimizationRun
     from app.routers.dashboard_demo import get_latest_global_run
+    from app.services.storage_service import StorageService
 
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
-        # Create an older COMPLETED run
+        # Create an older COMPLETED run WITH artifacts
         older_run_id = uuid.uuid4()
         older_run = OptimizationRun(
             id=older_run_id,
@@ -90,26 +92,61 @@ def test_get_latest_global_run_selects_completed():
         )
         db.add(older_run)
 
-        # Create a newer OPTIMIZING run
+        # Create the artifacts for the older run
+        storage_older = StorageService(older_run_id)
+        storage_older.ensure_run_dirs()
+        storage_older.result_path("queue_validation_results.csv").touch()
+        storage_older.result_path("classical_optimization_schedule.csv").touch()
+        storage_older.result_path("shift_schedule.csv").touch()
+        storage_older.result_path("quantum_classical_comparison.csv").touch()
+        storage_older.data_path("raw/synthetic_call_center.csv").touch()
+        storage_older.data_path("processed/forecast_results.csv").touch()
+
+        # Create a newer COMPLETED run MISSING artifacts
         newer_run_id = uuid.uuid4()
         newer_run = OptimizationRun(
             id=newer_run_id,
-            status="OPTIMIZING",
+            status="COMPLETED",
             created_at=datetime.utcnow()
         )
         db.add(newer_run)
-        
+
         db.commit()
 
         # Test the function directly
         latest = get_latest_global_run(db)
-        
-        # It should select the older COMPLETED run, ignoring the newer OPTIMIZING run
+
+        # It should select the older COMPLETED run, ignoring the newer one with missing artifacts
         assert latest.id == older_run_id
-        
+
         # Cleanup isolated test data
         db.delete(newer_run)
         db.delete(older_run)
         db.commit()
     finally:
         db.close()
+
+def test_readonly_demo_mode_without_db(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "DASHBOARD_DEMO_MODE", "readonly")
+
+    # Test /kpis
+    kpi_resp = client.get("/api/v1/dashboard/demo/kpis")
+    assert kpi_resp.status_code == 200
+    kpi_data = kpi_resp.json()
+    assert kpi_data["success"] is True
+    assert "average_wage" in kpi_data["data"]
+
+    # Test /datasets
+    ds_resp = client.get("/api/v1/dashboard/demo/datasets")
+    assert ds_resp.status_code == 200
+    ds_data = ds_resp.json()
+    assert ds_data["success"] is True
+    assert "raw" in ds_data["data"]
+
+    # Test /whatif
+    wi_resp = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.0&budget=20000&sla=80")
+    assert wi_resp.status_code == 200
+    wi_data = wi_resp.json()
+    assert wi_data["success"] is True
+    assert "projected_cost" in wi_data["data"]

@@ -81,7 +81,7 @@ def test_corrupt_csv_handling(tmp_path):
     dest.write_text("")  # 0 bytes
     
     with pytest.raises(HTTPException) as excinfo:
-        _load_queue_results_cached.__wrapped__(str(dest))
+        _load_queue_results_cached.__wrapped__(str(dest), 0.0)
     assert excinfo.value.status_code == 500
     assert "Artifact corrupted" in excinfo.value.detail
     
@@ -91,7 +91,7 @@ def test_missing_required_columns(tmp_path):
     df.to_csv(dest, index=False)
     
     with pytest.raises(HTTPException) as excinfo:
-        _load_queue_results_cached.__wrapped__(str(dest))
+        _load_queue_results_cached.__wrapped__(str(dest), 0.0)
     assert excinfo.value.status_code == 500
     assert "missing required columns" in excinfo.value.detail
 
