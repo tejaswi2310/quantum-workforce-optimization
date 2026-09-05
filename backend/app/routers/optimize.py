@@ -31,18 +31,26 @@ def start_optimization(project_id: uuid.UUID, run_type: str, parameters: dict, b
 
 @router.post("/classical", response_model=OptimizationRunResponse)
 def optimize_classical(project_id: uuid.UUID, req: OptimizationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if req.parameters:
+        raise HTTPException(status_code=400, detail=f"Unsupported parameters provided: {list(req.parameters.keys())}. This endpoint does not currently support parameter overrides.")
     return start_optimization(project_id, "classical", req.parameters or {}, background_tasks, db, current_user)
 
 @router.post("/shifts", response_model=OptimizationRunResponse)
 def optimize_shifts(project_id: uuid.UUID, req: OptimizationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if req.parameters:
+        raise HTTPException(status_code=400, detail=f"Unsupported parameters provided: {list(req.parameters.keys())}. This endpoint does not currently support parameter overrides.")
     return start_optimization(project_id, "shift", req.parameters or {}, background_tasks, db, current_user)
 
 @router.post("/quantum", response_model=OptimizationRunResponse)
 def optimize_quantum(project_id: uuid.UUID, req: OptimizationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if req.parameters:
+        raise HTTPException(status_code=400, detail=f"Unsupported parameters provided: {list(req.parameters.keys())}. This endpoint does not currently support parameter overrides.")
     return start_optimization(project_id, "quantum", req.parameters or {}, background_tasks, db, current_user)
 
 @router.post("/hybrid", response_model=OptimizationRunResponse)
 def optimize_hybrid(project_id: uuid.UUID, req: OptimizationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if req.parameters:
+        raise HTTPException(status_code=400, detail=f"Unsupported parameters provided: {list(req.parameters.keys())}. This endpoint does not currently support parameter overrides.")
     return start_optimization(project_id, "hybrid", req.parameters or {}, background_tasks, db, current_user)
 
 @router.get("/runs", response_model=list[OptimizationRunResponse])

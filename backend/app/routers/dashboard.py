@@ -150,7 +150,7 @@ import functools
 from app.services.kpi_service import get_average_wage
 
 @functools.lru_cache(maxsize=32)
-def _load_queue_results_cached(path_str: str) -> pd.DataFrame:
+def _load_queue_results_cached(path_str: str, mtime: float) -> pd.DataFrame:
     try:
         df = pd.read_csv(path_str)
         required_cols = {'hour', 'calls', 'required_agents', 'sla_percent'}
@@ -184,7 +184,8 @@ def get_whatif_scenario(
     if not queue_path.exists():
         raise HTTPException(status_code=404, detail="Queue validation results not found")
 
-    df_queue = _load_queue_results_cached(str(queue_path)).copy()
+    mtime = os.path.getmtime(queue_path)
+    df_queue = _load_queue_results_cached(str(queue_path), mtime).copy()
     new_agents_needed = 0
     new_cost = 0.0
 

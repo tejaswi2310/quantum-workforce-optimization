@@ -88,13 +88,23 @@ class StorageService:
     def atomic_write_csv(self, df: "pd.DataFrame", filepath: Path, **kwargs):
         """Atomically writes a pandas DataFrame to a CSV file."""
         import os
+        import uuid
 
-        temp_path = filepath.with_suffix(filepath.suffix + '.tmp')
+        temp_path = filepath.with_suffix(f"{filepath.suffix}.{uuid.uuid4().hex}.tmp")
         try:
             # Write to temporary file
             df.to_csv(temp_path, **kwargs)
             # Atomically replace destination
-            os.replace(temp_path, filepath)
+            max_retries = 10
+            for i in range(max_retries):
+                try:
+                    os.replace(temp_path, filepath)
+                    break
+                except PermissionError:
+                    if i == max_retries - 1:
+                        raise
+                    import time
+                    time.sleep(0.01 * (1.5 ** i))
         except Exception as e:
             # Clean up temporary file on failure
             if temp_path.exists():
@@ -105,8 +115,9 @@ class StorageService:
         """Atomically writes a dictionary to a JSON file."""
         import os
         import json
+        import uuid
 
-        temp_path = filepath.with_suffix(filepath.suffix + '.tmp')
+        temp_path = filepath.with_suffix(f"{filepath.suffix}.{uuid.uuid4().hex}.tmp")
         try:
             # Write to temporary file
             with open(temp_path, 'w', encoding='utf-8') as f:
@@ -114,7 +125,16 @@ class StorageService:
                 f.flush()
                 os.fsync(f.fileno())
             # Atomically replace destination
-            os.replace(temp_path, filepath)
+            max_retries = 10
+            for i in range(max_retries):
+                try:
+                    os.replace(temp_path, filepath)
+                    break
+                except PermissionError:
+                    if i == max_retries - 1:
+                        raise
+                    import time
+                    time.sleep(0.01 * (1.5 ** i))
         except Exception as e:
             # Clean up temporary file on failure
             if temp_path.exists():

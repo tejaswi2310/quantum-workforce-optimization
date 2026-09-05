@@ -237,11 +237,10 @@ def run_classical_optimization(run_id: uuid.UUID = None):
     for i, agent in enumerate(agents):
         for t in range(168):
             for k in skills:
-                y[(i, k, t)] = model.NewBoolVar(f'y_{i}_{k}_{t}')
-                if k not in agent['skills']:
-                    model.Add(y[(i, k, t)] == 0)
+                if k in agent['skills']:
+                    y[(i, k, t)] = model.NewBoolVar(f'y_{i}_{k}_{t}')
 
-            model.AddAtMostOne([y[(i, k, t)] for k in skills])
+            model.AddAtMostOne([y[(i, k, t)] for k in skills if k in agent['skills']])
 
             d_curr = t // 24
             days_to_check = [d_curr, d_curr - 1] if d_curr > 0 else [d_curr]
@@ -251,7 +250,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
                 for s in range(len(shift_templates))
                 if t in shift_working_hours[(d, s)]
             ]
-            model.Add(sum(y[(i, k, t)] for k in skills) == sum(shifts_working_at_t))
+            model.Add(sum(y[(i, k, t)] for k in skills if k in agent['skills']) == sum(shifts_working_at_t))
 
     # Shortfall and idle variables
     shortfall = {}
@@ -261,7 +260,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
             shortfall[(k, t)] = model.NewIntVar(0, 1000, f'shortfall_{k}_{t}')
             idle[(k, t)] = model.NewIntVar(0, 1000, f'idle_{k}_{t}')
 
-            assigned_total = sum(y[(i, k, t)] for i in range(len(agents)))
+            assigned_total = sum(y[(i, k, t)] for i in range(len(agents)) if k in agents[i]['skills'])
 
             diff = model.NewIntVar(-1000, 1000, f'diff_{k}_{t}')
             model.Add(diff == assigned_total - demand[(k, t)])
@@ -336,7 +335,7 @@ def run_classical_optimization(run_id: uuid.UUID = None):
                 total_sched = 0
                 for k in skills:
                     req = demand[(k, t)]
-                    sched = sum(solver.Value(y[(i, k, t)]) for i in range(len(agents)))
+                    sched = sum(solver.Value(y[(i, k, t)]) for i in range(len(agents)) if k in agents[i]['skills'])
                     total_req += req
                     total_sched += sched
 

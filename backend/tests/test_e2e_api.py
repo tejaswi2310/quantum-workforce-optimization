@@ -78,7 +78,7 @@ def test_full_pipeline_e2e(client: TestClient):
     assert results_resp.status_code == 200
     
     # 12-15. Optimizations
-    opt_payload = {"parameters": {"budget": 5000, "sla": 80}}
+    opt_payload = {"parameters": {}}
     class_opt = client.post(f"/api/v1/projects/{project_id}/optimize/classical", json=opt_payload, headers=headers)
     assert class_opt.status_code == 200
     class_id = class_opt.json()["id"]

@@ -99,8 +99,17 @@ def run_quantum_optimization(run_id: uuid.UUID = None):
     # Deterministic selection: technical skill, sorted by agent_id, take top 4
     eligible_agents = df_roster[df_roster['skills'].str.contains(target_skill)].sort_values('agent_id')
     selected_agents_df = eligible_agents.head(4)
-    if len(selected_agents_df) < 4:
-        raise ValueError("Not enough eligible agents for the quantum reduced instance.")
+    if len(selected_agents_df) == 0:
+        print("No eligible agents for the quantum reduced instance. Skipping.")
+        metadata_data = [
+            {"Metric": "Instance ID", "Value": str(run_id) if run_id else "N/A"},
+            {"Metric": "Optimization Status", "Value": "SKIPPED (0 eligible agents)"},
+            {"Metric": "Conclusion", "Value": "QAOA was skipped due to insufficient eligible agents."}
+        ]
+        df_meta = pd.DataFrame(metadata_data)
+        meta_path = storage.result_path("quantum_metadata.csv")
+        storage.atomic_write_csv(df_meta, meta_path, index=False)
+        return
 
     selected_agents = selected_agents_df.to_dict('records')
     for a in selected_agents:
