@@ -72,7 +72,10 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 import requests
 
-API_BASE_URL = "http://localhost:8000/api/v1/dashboard/demo"
+API_BASE_URL = os.getenv(
+    "API_BASE_URL",
+    "http://localhost:8000/api/v1/dashboard/demo"
+)
 
 def fetch_api(endpoint, params=None):
     try:
