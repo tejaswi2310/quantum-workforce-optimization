@@ -24,8 +24,8 @@ def test_get_demo_kpis():
         assert "Total Cost Raw" in data["data"]
 
 def test_get_demo_whatif_baseline():
-    """Test baseline scenario (volume_change=1.0)"""
-    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.0&budget=20000&sla=80")
+    """Test baseline scenario (volume_change=0.0)"""
+    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=0.0&budget=20000&sla=80")
     assert response.status_code in [200, 404]
     if response.status_code == 200:
         data = response.json()["data"]
@@ -38,21 +38,29 @@ def test_get_demo_whatif_baseline():
 
 def test_get_demo_whatif_increased_volume():
     """Test increased volume scenario (+20%)"""
-    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.2&budget=20000&sla=90")
+    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=20.0&budget=20000&sla=90")
     assert response.status_code in [200, 404]
     if response.status_code == 200:
         data = response.json()["data"]
         assert data["projected_sla"] == 90
         assert data["budget"] == 20000
 
+def test_get_demo_whatif_decreased_volume():
+    """Test decreased volume scenario (-20%)"""
+    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=-20.0&budget=20000&sla=90")
+    assert response.status_code in [200, 404]
+
 def test_get_demo_whatif_invalid():
-    """Test invalid negative input for volume_change"""
-    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=-0.5&budget=20000&sla=90")
-    assert response.status_code == 422 # FastAPI Validation Error
+    """Test invalid out of bounds input for volume_change"""
+    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=-150.0&budget=20000&sla=90")
+    assert response.status_code == 422 # FastAPI Validation Error (ge=-100)
+
+    response2 = client.get("/api/v1/dashboard/demo/whatif?volume_change=1001.0&budget=20000&sla=90")
+    assert response2.status_code == 422 # FastAPI Validation Error (le=1000)
 
 def test_get_demo_whatif_budget_validation():
     """Test budget validation logic"""
-    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.0&budget=10&sla=90")
+    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=0.0&budget=10&sla=90")
     assert response.status_code in [200, 404]
     if response.status_code == 200:
         data = response.json()["data"]
@@ -63,10 +71,10 @@ def test_get_demo_whatif_budget_validation():
 
 def test_get_demo_whatif_sla_validation():
     """Test invalid SLA input"""
-    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.0&budget=20000&sla=150")
+    response = client.get("/api/v1/dashboard/demo/whatif?volume_change=0.0&budget=20000&sla=150")
     assert response.status_code == 422 # Should fail le=100 validation
 
-    response_negative_sla = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.0&budget=20000&sla=-10")
+    response_negative_sla = client.get("/api/v1/dashboard/demo/whatif?volume_change=0.0&budget=20000&sla=-10")
     assert response_negative_sla.status_code == 422 # Should fail ge=0 validation
 
 def test_get_latest_global_run_selects_completed():
@@ -145,7 +153,7 @@ def test_readonly_demo_mode_without_db(monkeypatch):
     assert "raw" in ds_data["data"]
 
     # Test /whatif
-    wi_resp = client.get("/api/v1/dashboard/demo/whatif?volume_change=1.0&budget=20000&sla=80")
+    wi_resp = client.get("/api/v1/dashboard/demo/whatif?volume_change=0.0&budget=20000&sla=80")
     assert wi_resp.status_code == 200
     wi_data = wi_resp.json()
     assert wi_data["success"] is True

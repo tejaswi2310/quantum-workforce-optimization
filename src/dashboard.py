@@ -177,7 +177,7 @@ def calculate_kpis(vol_mult, df_c, df_v):
     utilization = (required / scheduled * 100) if scheduled > 0 else 100
 
     # Fetch what-if for accurate Erlang-C metrics if volume changes
-    whatif_res = fetch_api("whatif", params={"volume_change": vol_mult, "budget": 1000000, "sla": min_sla})
+    whatif_res = fetch_api("whatif", params={"volume_change": (vol_mult - 1.0) * 100.0, "budget": 1000000, "sla": min_sla})
     if whatif_res and whatif_res.get("success"):
         whatif_data = whatif_res.get("data", {})
         queue_length = whatif_data.get("expected_queue_length", 0)
@@ -512,7 +512,7 @@ with tabs[4]:
 
         if volume_multiplier != 1.0:
             st.info("Dynamic SLA projection via What-If backend API...")
-            whatif_res = fetch_api("whatif", params={"volume_change": volume_multiplier, "budget": 1000000, "sla": min_sla})
+            whatif_res = fetch_api("whatif", params={"volume_change": (volume_multiplier - 1.0) * 100.0, "budget": 1000000, "sla": min_sla})
             # To preserve 168-hour UI array shape without replicating Erlang-C math:
             # We assume SLA decays uniformly if understaffed.
             if whatif_res and whatif_res.get("success"):
@@ -555,7 +555,7 @@ with tabs[5]:
 
     if run_uuid and df_validation is not None:
         whatif_res = fetch_api("whatif", params={
-            "volume_change": volume_multiplier,
+            "volume_change": (volume_multiplier - 1.0) * 100.0,
             "budget": budget,
             "sla": min_sla
         })

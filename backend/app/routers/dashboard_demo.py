@@ -127,7 +127,7 @@ def get_demo_kpis(db: Session = Depends(get_db)):
 
 @demo_router.get("/whatif")
 def get_demo_whatif(
-    volume_change: float = Query(1.0, ge=0.0, le=1000.0),
+    volume_change: float = Query(0.0, ge=-100.0, le=1000.0),
     budget: float = Query(5000, gt=0),
     sla: float = Query(80, ge=0, le=100),
     db: Session = Depends(get_db)
@@ -158,7 +158,7 @@ def get_demo_whatif(
 
     for row in df_queue.itertuples(index=False):
         base_calls = float(row.calls)
-        adjusted_calls = base_calls * volume_change
+        adjusted_calls = base_calls * (1 + volume_change / 100.0)
         c, A, achieved_sla, p_w = required_agents_for_sla(adjusted_calls, 300, 3600, sla / 100.0, 20)
         new_agents_needed += c
         if avg_wage is not None:
